@@ -74,6 +74,8 @@ class YouTubeDownloader:
             "nocheckcertificate": True,
             "prefer_insecure": False,
             "age_limit": None,
+            # Improve resilience against some YouTube bot/sign-in checks.
+            "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
         }
 
         return opts
@@ -93,6 +95,7 @@ def _build_info_options() -> Dict[str, Any]:
             "Connection": "keep-alive",
         },
         "nocheckcertificate": True,
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
     }
     return ydl_opts
 

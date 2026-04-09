@@ -196,14 +196,42 @@ Find 3-7 compelling segments that would work well as standalone clips. Quality o
 _transcript_agent: Optional[Agent[None, TranscriptAnalysis]] = None
 
 
+def _resolve_llm_model_for_runtime(model_name: str) -> str:
+    """
+    Normalize model provider for runtime so Google models use Vertex auth when enabled.
+    """
+    normalized = (model_name or "").strip()
+    if not normalized:
+        return model_name
+
+    provider, sep, model = normalized.partition(":")
+    provider = provider.strip().lower()
+    model = model.strip()
+
+    if not sep:
+        return normalized
+
+    if (
+        provider in {"google", "google-gla"}
+        and config.has_google_vertex_credentials()
+    ):
+        return f"google-vertex:{model}"
+
+    return normalized
+
+
 def _get_missing_llm_key_error(model_name: str) -> Optional[str]:
     """Return a clear configuration error when the selected LLM key is missing."""
-    provider = model_name.split(":", 1)[0].strip().lower()
+    provider = _resolve_llm_model_for_runtime(model_name).split(":", 1)[0].strip().lower()
 
-    if provider in {"google", "google-gla"} and not config.google_api_key:
+    if (
+        provider in {"google", "google-gla"}
+        and not config.google_api_key
+        and not config.has_google_vertex_credentials()
+    ):
         return (
-            "Selected LLM provider is Google, but GOOGLE_API_KEY is not set. "
-            "Set GOOGLE_API_KEY or set LLM to openai:* / anthropic:* / ollama:* with the matching API key."
+            "Selected LLM provider is Google, but neither GOOGLE_API_KEY nor Vertex AI auth is configured. "
+            "Set GOOGLE_API_KEY, or set GOOGLE_GENAI_USE_VERTEXAI=true and GOOGLE_CLOUD_PROJECT."
         )
 
     if provider == "openai" and not config.openai_api_key:
@@ -230,12 +258,13 @@ def get_transcript_agent() -> Agent[None, TranscriptAnalysis]:
     """Get or create the transcript analysis agent (lazy initialization)."""
     global _transcript_agent
     if _transcript_agent is None:
-        config_error = _get_missing_llm_key_error(config.llm)
+        model_name = _resolve_llm_model_for_runtime(config.llm)
+        config_error = _get_missing_llm_key_error(model_name)
         if config_error:
             raise RuntimeError(config_error)
 
         _transcript_agent = Agent[None, TranscriptAnalysis](
-            model=config.llm,
+            model=model_name,
             result_type=TranscriptAnalysis,
             system_prompt=transcript_analysis_system_prompt,
         )

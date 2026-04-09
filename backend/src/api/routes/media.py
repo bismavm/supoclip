@@ -10,7 +10,7 @@ import logging
 import uuid
 import aiofiles
 
-from ...config import Config
+from ...config import Config, get_config
 from ...database import get_db
 from ...auth_headers import get_signed_user_id, USER_ID_HEADER
 from ...services.billing_service import BillingService
@@ -28,6 +28,7 @@ from fastapi import Depends
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["media"])
+config = get_config()
 
 
 def _get_authenticated_user_id(request: Request) -> str:

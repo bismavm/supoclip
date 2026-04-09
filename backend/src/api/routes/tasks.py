@@ -26,6 +26,7 @@ from ...clip_editor import export_with_preset, EXPORT_PRESETS
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/tasks", tags=["tasks"])
+config = get_config()
 
 
 def _normalize_font_size(value: Any, default: int = 24) -> int:
