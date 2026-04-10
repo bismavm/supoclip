@@ -28,6 +28,9 @@ class Config:
         self.transcription_provider = self._normalize_transcription_provider(
             os.getenv("TRANSCRIPTION_PROVIDER", "google_genai")
         )
+        self.transcription_language = self._normalize_language_code(
+            os.getenv("TRANSCRIPTION_LANGUAGE", "ms")
+        )
         self.gemini_transcription_model = (
             self._get_optional_env("GEMINI_TRANSCRIPTION_MODEL")
             or "gemini-3-flash-preview"
@@ -137,6 +140,23 @@ class Config:
         if normalized in {"google_genai", "assemblyai"}:
             return normalized
         return "google_genai"
+
+    @staticmethod
+    def _normalize_language_code(value: str | None) -> str:
+        """
+        Normalize language code for transcription.
+        Supports: ms (Malay), en, id, es, fr, de, ja, ko, zh, pt, ru, ar, hi, etc.
+        See: https://www.assemblyai.com/docs/concepts/supported-languages
+        """
+        normalized = (value or "").strip().lower()
+        # List of commonly supported language codes
+        supported_languages = {
+            "ms", "en", "id", "es", "fr", "de", "ja", "ko", "zh", "pt", "ru",
+            "ar", "hi", "it", "nl", "pl", "tr", "vi", "th", "auto"
+        }
+        if normalized in supported_languages:
+            return normalized
+        return "ms"  # Default to Malay (Malaysia) if unsupported
 
     def resolve_youtube_data_api_key(self) -> str | None:
         return self.youtube_data_api_key or self.google_api_key

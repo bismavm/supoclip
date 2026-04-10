@@ -482,11 +482,23 @@ def _get_video_transcript_google_genai(video_path: Path) -> str:
             http_options=types.HttpOptions(api_version="v1"),
         )
 
+        # Build language-specific prompt
+        language_instruction = ""
+        if config.transcription_language == "ms":
+            language_instruction = " Transcribe in Malay (Bahasa Malaysia/Melayu)."
+        elif config.transcription_language == "id":
+            language_instruction = " Transcribe in Indonesian (Bahasa Indonesia)."
+        elif config.transcription_language == "en":
+            language_instruction = " Transcribe in English."
+        elif config.transcription_language != "auto":
+            language_instruction = f" Transcribe in the language code: {config.transcription_language}."
+
         prompt = (
-            "Transcribe this audio into JSON. Return only JSON in this schema: "
+            f"Transcribe this audio into JSON.{language_instruction} Return only JSON in this schema: "
             "{'utterances':[{'start_time':'HH:MM:SS','end_time':'HH:MM:SS','speaker':'Speaker A','text':'...'}]}. "
             "Use accurate timestamps from the audio and include all speech."
         )
+        logger.info(f"Gemini transcription language: {config.transcription_language}")
         response = client.models.generate_content(
             model=config.gemini_transcription_model,
             contents=[
@@ -548,6 +560,11 @@ def _get_video_transcript_assemblyai(video_path: Path, speech_model: str = "best
         "format_text": True,
         "speech_models": ["universal-2"],
     }
+
+    # Add language code if not auto-detect
+    if config.transcription_language and config.transcription_language != "auto":
+        transcript_payload["language_code"] = config.transcription_language
+        logger.info(f"Using language code: {config.transcription_language}")
     create_response = requests.post(
         "https://api.assemblyai.com/v2/transcript",
         headers={**headers, "content-type": "application/json"},
