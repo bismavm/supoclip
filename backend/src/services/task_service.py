@@ -47,8 +47,8 @@ class TaskService:
         self.config = config or get_config()
 
     @staticmethod
-    def _build_cache_key(url: str, source_type: str, processing_mode: str) -> str:
-        payload = f"{source_type}|{processing_mode}|{url.strip()}"
+    def _build_cache_key(url: str, source_type: str, processing_mode: str, language: str = "auto") -> str:
+        payload = f"{source_type}|{processing_mode}|{language}|{url.strip()}"
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
     def _is_stale_queued_task(self, task: Dict[str, Any]) -> bool:
@@ -144,10 +144,10 @@ class TaskService:
         Returns processing results.
         """
         try:
-            logger.info(f"Starting processing for task {task_id}")
+            logger.info(f"Starting processing for task {task_id} with language: {language}")
             started_at = datetime.utcnow()
             stage_timings: Dict[str, float] = {}
-            cache_key = self._build_cache_key(url, source_type, processing_mode)
+            cache_key = self._build_cache_key(url, source_type, processing_mode, language)
 
             cache_entry = await self.cache_repo.get_cache(self.db, cache_key)
             cached_transcript = (

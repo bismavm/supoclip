@@ -354,11 +354,15 @@ async def get_most_relevant_parts_by_transcript(
     try:
         agent = get_transcript_agent()
 
-        result = await agent.run(
-            build_transcript_analysis_prompt(
-                transcript=transcript, include_broll=include_broll, language=language
-            )
+        prompt = build_transcript_analysis_prompt(
+            transcript=transcript, include_broll=include_broll, language=language
         )
+
+        # Log language instruction for debugging
+        if language != "auto":
+            logger.info(f"🌐 LANGUAGE MODE ACTIVE: Forcing {language} language in segment.text")
+
+        result = await agent.run(prompt)
 
         analysis = result.data
         logger.info(
@@ -420,6 +424,11 @@ async def get_most_relevant_parts_by_transcript(
                         segment.virality.total_score = calculated_total
 
                 validated_segments.append(segment)
+
+                # Log segment text for language debugging
+                if language != "auto":
+                    logger.debug(f"Segment {len(validated_segments)} text: {segment.text[:100]}...")
+
                 virality_info = (
                     f", virality={segment.virality.total_score}"
                     if segment.virality
