@@ -70,7 +70,8 @@ class VideoService:
         logger.info(f"🌐 STARTING TRANSLATION: {len(segments)} segments → {language_name}")
 
         try:
-            import google.generativeai as genai
+            from google import genai
+            from google.genai import types
 
             # Configure Gemini
             if not config.google_api_key:
@@ -79,8 +80,10 @@ class VideoService:
                 return segments
 
             logger.info(f"✅ Google API key found, initializing Gemini...")
-            genai.configure(api_key=config.google_api_key)
-            model = genai.GenerativeModel("gemini-2.0-flash-exp")
+
+            # Use Google AI SDK (genai)
+            client = genai.Client(api_key=config.google_api_key)
+            model_name = "gemini-2.0-flash-exp"
 
             translated_segments = []
             for i, segment in enumerate(segments):
@@ -103,8 +106,20 @@ CRITICAL RULES:
 
                 try:
                     logger.debug(f"🔄 Translating segment {i+1}/{len(segments)}...")
-                    response = model.generate_content(prompt)
-                    translated_text = response.text.strip()
+
+                    # Use Google Genai SDK
+                    response = client.models.generate_content(
+                        model=model_name,
+                        contents=prompt
+                    )
+
+                    # Extract text from response
+                    if hasattr(response, 'text'):
+                        translated_text = response.text.strip()
+                    elif hasattr(response, 'candidates') and response.candidates:
+                        translated_text = response.candidates[0].content.parts[0].text.strip()
+                    else:
+                        raise ValueError("Cannot extract text from Gemini response")
 
                     if not translated_text:
                         raise ValueError("Empty response from Gemini")
