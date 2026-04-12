@@ -511,16 +511,33 @@ def _get_video_transcript_google_genai(video_path: Path) -> str:
             http_options=types.HttpOptions(api_version="v1"),
         )
 
-        # Build language-specific prompt
+        # Build language-specific prompt with full language names
+        language_map = {
+            "ms": "Malay (Bahasa Malaysia/Melayu)",
+            "id": "Indonesian (Bahasa Indonesia)",
+            "en": "English",
+            "th": "Thai",
+            "ja": "Japanese",
+            "ko": "Korean",
+            "zh": "Chinese",
+            "es": "Spanish",
+            "fr": "French",
+            "de": "German",
+            "pt": "Portuguese",
+            "ru": "Russian",
+            "ar": "Arabic",
+            "hi": "Hindi",
+            "it": "Italian",
+            "nl": "Dutch",
+            "pl": "Polish",
+            "tr": "Turkish",
+            "vi": "Vietnamese",
+        }
+
         language_instruction = ""
-        if config.transcription_language == "ms":
-            language_instruction = " Transcribe in Malay (Bahasa Malaysia/Melayu)."
-        elif config.transcription_language == "id":
-            language_instruction = " Transcribe in Indonesian (Bahasa Indonesia)."
-        elif config.transcription_language == "en":
-            language_instruction = " Transcribe in English."
-        elif config.transcription_language != "auto":
-            language_instruction = f" Transcribe in the language code: {config.transcription_language}."
+        if config.transcription_language != "auto":
+            language_name = language_map.get(config.transcription_language, config.transcription_language)
+            language_instruction = f" Transcribe in {language_name}."
 
         prompt = (
             f"Transcribe this audio into JSON.{language_instruction} Return only JSON in this schema: "
