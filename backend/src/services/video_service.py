@@ -28,55 +28,97 @@ logger = logging.getLogger(__name__)
 config = Config()
 UPLOAD_URL_PREFIX = "upload://"
 
+# Language name mapping for Gemini translation
+LANGUAGE_NAMES = {
+    "ms": "Malay (Bahasa Malaysia)",
+    "id": "Indonesian (Bahasa Indonesia)",
+    "en": "English",
+    "th": "Thai (ภาษาไทย)",
+    "ja": "Japanese (日本語)",
+    "ko": "Korean (한국어)",
+    "zh": "Chinese (中文)",
+    "es": "Spanish",
+    "fr": "French",
+    "de": "German",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ar": "Arabic (العربية)",
+    "hi": "Hindi (हिन्दी)",
+    "it": "Italian",
+    "nl": "Dutch",
+    "pl": "Polish",
+    "tr": "Turkish",
+    "vi": "Vietnamese",
+}
+
 
 class VideoService:
     """Service for video processing operations."""
 
     @staticmethod
-    def _extract_text_from_transcript(transcript: str, start_time: str, end_time: str) -> Optional[str]:
+    async def translate_segment_texts(segments: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
         """
-        Extract text from transcript based on timestamp range.
-        Transcript format: [00:12 - 00:21] Text here
-        Returns text that falls within the timestamp range.
+        Translate all segment texts to target language using Gemini.
+        This ensures correct language and script regardless of AI output.
         """
-        import re
+        if target_language == "auto" or not target_language:
+            logger.info("No target language specified, skipping translation")
+            return segments
 
-        def parse_time(time_str: str) -> int:
-            """Convert MM:SS to seconds"""
-            try:
-                parts = time_str.split(":")
-                if len(parts) == 2:
-                    return int(parts[0]) * 60 + int(parts[1])
-                elif len(parts) == 3:
-                    return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                return 0
-            except:
-                return 0
+        language_name = LANGUAGE_NAMES.get(target_language, target_language)
+        logger.info(f"Translating {len(segments)} segments to {language_name}")
 
         try:
-            start_seconds = parse_time(start_time)
-            end_seconds = parse_time(end_time)
+            import google.generativeai as genai
 
-            # Parse transcript lines
-            lines = transcript.strip().split("\n")
-            extracted_texts = []
+            # Configure Gemini
+            if config.google_api_key:
+                genai.configure(api_key=config.google_api_key)
+            else:
+                logger.warning("No Google API key, skipping translation")
+                return segments
 
-            for line in lines:
-                # Match format: [00:12 - 00:21] Text here
-                match = re.match(r'\[(\d+:\d+)\s*-\s*(\d+:\d+)\]\s*(.+)', line)
-                if match:
-                    line_start = parse_time(match.group(1))
-                    line_end = parse_time(match.group(2))
-                    text = match.group(3).strip()
+            model = genai.GenerativeModel("gemini-2.0-flash-exp")
 
-                    # Check if this line overlaps with our target range
-                    if line_start <= end_seconds and line_end >= start_seconds:
-                        extracted_texts.append(text)
+            translated_segments = []
+            for i, segment in enumerate(segments):
+                original_text = segment.get("text", "")
+                if not original_text.strip():
+                    translated_segments.append(segment)
+                    continue
 
-            return " ".join(extracted_texts) if extracted_texts else None
+                # Translate using Gemini
+                prompt = f"""Translate this text to {language_name}. Use native script and characters.
+
+Original text: {original_text}
+
+Rules:
+- Translate ONLY the text, no explanations
+- Use proper {language_name} script and characters
+- Keep the same meaning and tone
+- Output ONLY the translated text, nothing else"""
+
+                try:
+                    response = model.generate_content(prompt)
+                    translated_text = response.text.strip()
+
+                    # Update segment with translated text
+                    updated_segment = segment.copy()
+                    updated_segment["text"] = translated_text
+                    translated_segments.append(updated_segment)
+
+                    logger.info(f"Segment {i+1}/{len(segments)} translated: {original_text[:50]}... → {translated_text[:50]}...")
+                except Exception as e:
+                    logger.error(f"Failed to translate segment {i+1}: {e}")
+                    # Fallback to original text
+                    translated_segments.append(segment)
+
+            return translated_segments
+
         except Exception as e:
-            logger.warning(f"Failed to extract text from transcript: {e}")
-            return None
+            logger.error(f"Translation process failed: {e}")
+            # Return original segments if translation fails
+            return segments
 
     @staticmethod
     def _get_file_duration(path: Path) -> Optional[float]:
@@ -419,33 +461,35 @@ class VideoService:
             segments_json: List[Dict[str, Any]] = []
             for segment in raw_segments:
                 if isinstance(segment, dict):
-                    start_time = segment.get("start_time")
-                    end_time = segment.get("end_time")
-                    # Extract text from transcript based on timestamp (more reliable than LLM output)
-                    extracted_text = VideoService._extract_text_from_transcript(transcript, start_time, end_time)
                     segments_json.append(
                         {
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": extracted_text or segment.get("text", ""),  # Fallback to LLM text if extraction fails
+                            "start_time": segment.get("start_time"),
+                            "end_time": segment.get("end_time"),
+                            "text": segment.get("text", ""),
                             "relevance_score": segment.get("relevance_score", 0.0),
                             "reasoning": segment.get("reasoning", ""),
                         }
                     )
                 else:
-                    start_time = segment.start_time
-                    end_time = segment.end_time
-                    # Extract text from transcript based on timestamp (more reliable than LLM output)
-                    extracted_text = VideoService._extract_text_from_transcript(transcript, start_time, end_time)
                     segments_json.append(
                         {
-                            "start_time": start_time,
-                            "end_time": end_time,
-                            "text": extracted_text or segment.text,  # Fallback to LLM text if extraction fails
+                            "start_time": segment.start_time,
+                            "end_time": segment.end_time,
+                            "text": segment.text,
                             "relevance_score": segment.relevance_score,
                             "reasoning": segment.reasoning,
                         }
                     )
+
+            # Step 3.5: Translate segments to target language (POST-PROCESSING)
+            if effective_language and effective_language != "auto":
+                if progress_callback:
+                    await progress_callback(
+                        65, f"Translating to {LANGUAGE_NAMES.get(effective_language, effective_language)}...", "processing"
+                    )
+
+                logger.info(f"🌐 POST-PROCESSING: Translating {len(segments_json)} segments to {effective_language}")
+                segments_json = await VideoService.translate_segment_texts(segments_json, effective_language)
 
             if processing_mode == "fast":
                 segments_json = segments_json[: config.fast_mode_max_clips]
