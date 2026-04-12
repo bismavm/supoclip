@@ -58,32 +58,35 @@ class VideoService:
     @staticmethod
     async def translate_segment_texts(segments: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
         """
-        Translate all segment texts to target language using Gemini.
+        🌐 POST-PROCESSING: Translate all segment texts to target language using Gemini.
         This ensures correct language and script regardless of AI output.
+        GUARANTEED to run before video rendering.
         """
         if target_language == "auto" or not target_language:
-            logger.info("No target language specified, skipping translation")
+            logger.info("⏭️ No target language specified, skipping translation")
             return segments
 
         language_name = LANGUAGE_NAMES.get(target_language, target_language)
-        logger.info(f"Translating {len(segments)} segments to {language_name}")
+        logger.info(f"🌐 STARTING TRANSLATION: {len(segments)} segments → {language_name}")
 
         try:
             import google.generativeai as genai
 
             # Configure Gemini
-            if config.google_api_key:
-                genai.configure(api_key=config.google_api_key)
-            else:
-                logger.warning("No Google API key, skipping translation")
+            if not config.google_api_key:
+                logger.error("❌ TRANSLATION FAILED: No GOOGLE_API_KEY found!")
+                logger.warning("Falling back to original text without translation")
                 return segments
 
+            logger.info(f"✅ Google API key found, initializing Gemini...")
+            genai.configure(api_key=config.google_api_key)
             model = genai.GenerativeModel("gemini-2.0-flash-exp")
 
             translated_segments = []
             for i, segment in enumerate(segments):
                 original_text = segment.get("text", "")
                 if not original_text.strip():
+                    logger.debug(f"Segment {i+1}: Empty text, skipping")
                     translated_segments.append(segment)
                     continue
 
@@ -92,32 +95,38 @@ class VideoService:
 
 Original text: {original_text}
 
-Rules:
-- Translate ONLY the text, no explanations
-- Use proper {language_name} script and characters
-- Keep the same meaning and tone
-- Output ONLY the translated text, nothing else"""
+CRITICAL RULES:
+- Output ONLY the translated text in {language_name}
+- Use proper {language_name} script (e.g., Thai: ภาษาไทย, Japanese: 日本語, Arabic: العربية)
+- NO explanations, NO English, JUST the translation
+- Keep the same meaning and tone"""
 
                 try:
+                    logger.debug(f"🔄 Translating segment {i+1}/{len(segments)}...")
                     response = model.generate_content(prompt)
                     translated_text = response.text.strip()
+
+                    if not translated_text:
+                        raise ValueError("Empty response from Gemini")
 
                     # Update segment with translated text
                     updated_segment = segment.copy()
                     updated_segment["text"] = translated_text
                     translated_segments.append(updated_segment)
 
-                    logger.info(f"Segment {i+1}/{len(segments)} translated: {original_text[:50]}... → {translated_text[:50]}...")
+                    logger.info(f"✅ Segment {i+1}/{len(segments)}: '{original_text[:40]}...' → '{translated_text[:40]}...'")
+
                 except Exception as e:
-                    logger.error(f"Failed to translate segment {i+1}: {e}")
-                    # Fallback to original text
+                    logger.error(f"❌ Translation failed for segment {i+1}: {e}")
+                    logger.warning(f"Using original text: {original_text[:50]}...")
                     translated_segments.append(segment)
 
+            logger.info(f"🎉 TRANSLATION COMPLETE! Translated {len(translated_segments)} segments")
             return translated_segments
 
         except Exception as e:
-            logger.error(f"Translation process failed: {e}")
-            # Return original segments if translation fails
+            logger.error(f"❌ TRANSLATION PROCESS CRASHED: {e}", exc_info=True)
+            logger.warning("Falling back to original segments")
             return segments
 
     @staticmethod
@@ -480,16 +489,6 @@ Rules:
                             "reasoning": segment.reasoning,
                         }
                     )
-
-            # Step 3.5: Translate segments to target language (POST-PROCESSING)
-            if effective_language and effective_language != "auto":
-                if progress_callback:
-                    await progress_callback(
-                        65, f"Translating to {LANGUAGE_NAMES.get(effective_language, effective_language)}...", "processing"
-                    )
-
-                logger.info(f"🌐 POST-PROCESSING: Translating {len(segments_json)} segments to {effective_language}")
-                segments_json = await VideoService.translate_segment_texts(segments_json, effective_language)
 
             if processing_mode == "fast":
                 segments_json = segments_json[: config.fast_mode_max_clips]
