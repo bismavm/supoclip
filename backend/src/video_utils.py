@@ -534,16 +534,26 @@ def _get_video_transcript_google_genai(video_path: Path) -> str:
             "vi": "Vietnamese",
         }
 
-        language_instruction = ""
+        # Build strong language instruction
         if config.transcription_language != "auto":
             language_name = language_map.get(config.transcription_language, config.transcription_language)
-            language_instruction = f" Transcribe in {language_name}."
-
-        prompt = (
-            f"Transcribe this audio into JSON.{language_instruction} Return only JSON in this schema: "
-            "{'utterances':[{'start_time':'HH:MM:SS','end_time':'HH:MM:SS','speaker':'Speaker A','text':'...'}]}. "
-            "Use accurate timestamps from the audio and include all speech."
-        )
+            prompt = (
+                f"You are transcribing audio in {language_name}. "
+                f"CRITICAL RULES:\n"
+                f"1. The audio is spoken in {language_name}\n"
+                f"2. Transcribe EXACTLY what you hear in {language_name}\n"
+                f"3. DO NOT translate to any other language\n"
+                f"4. Keep all text in original {language_name}\n\n"
+                f"Return only JSON in this schema: "
+                "{'utterances':[{'start_time':'HH:MM:SS','end_time':'HH:MM:SS','speaker':'Speaker A','text':'...'}]}. "
+                "Use accurate timestamps from the audio and include all speech."
+            )
+        else:
+            prompt = (
+                "Transcribe this audio into JSON. Return only JSON in this schema: "
+                "{'utterances':[{'start_time':'HH:MM:SS','end_time':'HH:MM:SS','speaker':'Speaker A','text':'...'}]}. "
+                "Use accurate timestamps from the audio and include all speech."
+            )
         logger.info(f"Gemini transcription language: {config.transcription_language}")
         response = client.models.generate_content(
             model=config.gemini_transcription_model,

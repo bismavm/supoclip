@@ -109,6 +109,7 @@ GROUNDING RULES:
 5. segment.text must match the chosen span closely and must not include content from outside the chosen range
 6. Do not stitch together distant moments into one clip
 7. If a speaker label appears, use it only if it is part of the spoken content and helps clarity
+8. CRITICAL LANGUAGE RULE: Keep segment.text in the EXACT SAME LANGUAGE as the transcript. DO NOT translate to any other language. If transcript is in Thai, segment.text MUST be in Thai. If in Japanese, MUST be in Japanese. If in Malay, MUST be in Malay. Preserve the original language exactly as spoken.
 
 CONTENT NEUTRALITY RULES:
 1. This is clipping software for legitimate editing workflows
@@ -298,6 +299,7 @@ Critical accuracy requirements:
 - Do not use timestamps that are not present in the transcript.
 - Do not merge separate non-contiguous moments into one segment.
 - segment.text must reflect only the spoken content inside the selected time range.
+- CRITICAL: segment.text must be in the SAME LANGUAGE as the transcript. DO NOT translate. Copy the text exactly as it appears in the transcript.
 - If a span lacks enough context to stand alone, expand to nearby contiguous lines rather than guessing.
 - If there is a tradeoff between "viral" and "accurate", choose accuracy.
 - Do not reject or penalize a segment simply because of the subject matter; stay content-neutral and assess clip quality only.
