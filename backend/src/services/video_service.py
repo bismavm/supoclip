@@ -33,6 +33,52 @@ class VideoService:
     """Service for video processing operations."""
 
     @staticmethod
+    def _extract_text_from_transcript(transcript: str, start_time: str, end_time: str) -> Optional[str]:
+        """
+        Extract text from transcript based on timestamp range.
+        Transcript format: [00:12 - 00:21] Text here
+        Returns text that falls within the timestamp range.
+        """
+        import re
+
+        def parse_time(time_str: str) -> int:
+            """Convert MM:SS to seconds"""
+            try:
+                parts = time_str.split(":")
+                if len(parts) == 2:
+                    return int(parts[0]) * 60 + int(parts[1])
+                elif len(parts) == 3:
+                    return int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                return 0
+            except:
+                return 0
+
+        try:
+            start_seconds = parse_time(start_time)
+            end_seconds = parse_time(end_time)
+
+            # Parse transcript lines
+            lines = transcript.strip().split("\n")
+            extracted_texts = []
+
+            for line in lines:
+                # Match format: [00:12 - 00:21] Text here
+                match = re.match(r'\[(\d+:\d+)\s*-\s*(\d+:\d+)\]\s*(.+)', line)
+                if match:
+                    line_start = parse_time(match.group(1))
+                    line_end = parse_time(match.group(2))
+                    text = match.group(3).strip()
+
+                    # Check if this line overlaps with our target range
+                    if line_start <= end_seconds and line_end >= start_seconds:
+                        extracted_texts.append(text)
+
+            return " ".join(extracted_texts) if extracted_texts else None
+        except Exception as e:
+            logger.warning(f"Failed to extract text from transcript: {e}")
+            return None
+
+    @staticmethod
     def _get_file_duration(path: Path) -> Optional[float]:
         """Return video duration in seconds via ffprobe, or None on failure."""
         try:
@@ -373,21 +419,29 @@ class VideoService:
             segments_json: List[Dict[str, Any]] = []
             for segment in raw_segments:
                 if isinstance(segment, dict):
+                    start_time = segment.get("start_time")
+                    end_time = segment.get("end_time")
+                    # Extract text from transcript based on timestamp (more reliable than LLM output)
+                    extracted_text = VideoService._extract_text_from_transcript(transcript, start_time, end_time)
                     segments_json.append(
                         {
-                            "start_time": segment.get("start_time"),
-                            "end_time": segment.get("end_time"),
-                            "text": segment.get("text", ""),
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": extracted_text or segment.get("text", ""),  # Fallback to LLM text if extraction fails
                             "relevance_score": segment.get("relevance_score", 0.0),
                             "reasoning": segment.get("reasoning", ""),
                         }
                     )
                 else:
+                    start_time = segment.start_time
+                    end_time = segment.end_time
+                    # Extract text from transcript based on timestamp (more reliable than LLM output)
+                    extracted_text = VideoService._extract_text_from_transcript(transcript, start_time, end_time)
                     segments_json.append(
                         {
-                            "start_time": segment.start_time,
-                            "end_time": segment.end_time,
-                            "text": segment.text,
+                            "start_time": start_time,
+                            "end_time": end_time,
+                            "text": extracted_text or segment.text,  # Fallback to LLM text if extraction fails
                             "relevance_score": segment.relevance_score,
                             "reasoning": segment.reasoning,
                         }
