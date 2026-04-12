@@ -225,20 +225,17 @@ class TaskService:
                 analysis_json=result.get("analysis_json"),
             )
 
-            # CRITICAL STEP: Translate segments to target language BEFORE rendering
+            # CRITICAL STEP: HARDCODED TRANSLATION TO THAI
             segments_to_render = result.get("segments_to_render", [])
 
-            if effective_language and effective_language != "auto":
-                logger.info(f"🌐 TRANSLATING {len(segments_to_render)} segments to {effective_language} BEFORE rendering")
-                await update_progress(
-                    68, f"Translating to {effective_language}...", "processing"
-                )
+            logger.info(f"🌐 HARDCODED: TRANSLATING {len(segments_to_render)} segments to THAI")
+            await update_progress(68, "Translating to Thai...", "processing")
 
-                from ..services.video_service import VideoService
-                segments_to_render = await VideoService.translate_segment_texts(
-                    segments_to_render, effective_language
-                )
-                logger.info(f"✅ Translation complete! First segment text: {segments_to_render[0].get('text', '')[:100] if segments_to_render else 'N/A'}")
+            from ..services.video_service import VideoService
+            segments_to_render = await VideoService.translate_segment_texts(
+                segments_to_render, "th"  # HARDCODED THAI
+            )
+            logger.info(f"✅ Translation complete! First segment text: {segments_to_render[0].get('text', '')[:100] if segments_to_render else 'N/A'}")
 
             # Render clips incrementally: render, save, notify one at a time
             video_path = Path(result["video_path"])

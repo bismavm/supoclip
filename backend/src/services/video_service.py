@@ -56,34 +56,31 @@ class VideoService:
     """Service for video processing operations."""
 
     @staticmethod
-    def translate_text_sync(text: str, target_language: str) -> str:
-        """Simple synchronous translation using Gemini REST API."""
+    def translate_text_sync(text: str, target_language: str = "th") -> str:
+        """HARDCODED: Translate to Thai using Gemini REST API."""
         import requests
 
+        logger.info(f"🔄 translate_text_sync called: {text[:50]}...")
+
         if not config.google_api_key:
+            logger.error("❌ NO GOOGLE_API_KEY!")
             return text
 
-        language_map = {
-            "ms": "Malay", "id": "Indonesian", "en": "English", "th": "Thai",
-            "ja": "Japanese", "ko": "Korean", "zh": "Chinese", "es": "Spanish",
-            "fr": "French", "de": "German", "pt": "Portuguese", "ru": "Russian",
-            "ar": "Arabic", "hi": "Hindi", "it": "Italian", "nl": "Dutch",
-            "pl": "Polish", "tr": "Turkish", "vi": "Vietnamese",
-        }
+        logger.info(f"✅ API key found, translating to Thai...")
 
-        language_name = language_map.get(target_language, target_language)
-
-        prompt = f"""Translate this text to {language_name}. Use native {language_name} script and characters.
+        prompt = f"""Translate this text to Thai (ภาษาไทย). Use Thai script.
 
 Text: {text}
 
-Rules:
-- Output ONLY the translated text
-- Use proper {language_name} script (Thai: ภาษาไทย, Japanese: 日本語, Arabic: العربية)
-- NO explanations, just translation"""
+RULES:
+- Output ONLY Thai text (ภาษาไทย)
+- Use Thai characters
+- NO English, NO explanations"""
 
         try:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={config.google_api_key}"
+            logger.info(f"📡 Calling Gemini API...")
+
             response = requests.post(
                 url,
                 json={"contents": [{"parts": [{"text": prompt}]}]},
@@ -92,9 +89,11 @@ Rules:
             response.raise_for_status()
             result = response.json()
             translated = result['candidates'][0]['content']['parts'][0]['text'].strip()
+
+            logger.info(f"✅ Translation SUCCESS: {translated[:50]}...")
             return translated
         except Exception as e:
-            logger.error(f"Translation failed: {e}")
+            logger.error(f"❌ Translation FAILED: {e}", exc_info=True)
             return text
 
     @staticmethod
