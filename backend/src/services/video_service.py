@@ -62,24 +62,31 @@ class VideoService:
         This ensures correct language and script regardless of AI output.
         GUARANTEED to run before video rendering.
         """
+        logger.info(f"🔍 TRANSLATE CALLED: target_language='{target_language}', segments={len(segments)}")
+
         if target_language == "auto" or not target_language:
             logger.info("⏭️ No target language specified, skipping translation")
             return segments
 
         language_name = LANGUAGE_NAMES.get(target_language, target_language)
-        logger.info(f"🌐 STARTING TRANSLATION: {len(segments)} segments → {language_name}")
+        logger.info(f"🌐 STARTING TRANSLATION: {len(segments)} segments → {language_name} ({target_language})")
 
         try:
+            logger.info("📦 Importing google.genai...")
             from google import genai
             from google.genai import types
+            logger.info("✅ Import successful!")
 
             # Configure Gemini
+            api_key_status = "SET" if config.google_api_key else "MISSING"
+            logger.info(f"🔑 Google API key status: {api_key_status}")
+
             if not config.google_api_key:
                 logger.error("❌ TRANSLATION FAILED: No GOOGLE_API_KEY found!")
                 logger.warning("Falling back to original text without translation")
                 return segments
 
-            logger.info(f"✅ Google API key found, initializing Gemini...")
+            logger.info(f"✅ Google API key found (length: {len(config.google_api_key)}), initializing Gemini...")
 
             # Use Google AI SDK (genai)
             client = genai.Client(api_key=config.google_api_key)
