@@ -273,7 +273,7 @@ def get_transcript_agent() -> Agent[None, TranscriptAnalysis]:
 
 
 def build_transcript_analysis_prompt(
-    transcript: str, include_broll: bool = False
+    transcript: str, include_broll: bool = False, language: str = "auto"
 ) -> str:
     """Build the grounded task prompt for transcript analysis."""
     broll_instruction = ""
@@ -282,7 +282,42 @@ def build_transcript_analysis_prompt(
             "\n5. Also identify B-roll opportunities for each chosen segment where stock footage could enhance the visual appeal."
         )
 
-    return f"""Analyze this video transcript and identify the most engaging segments for short-form content.
+    # Build explicit language instruction based on detected language
+    language_map = {
+        "ms": "Malay (Bahasa Malaysia)",
+        "id": "Indonesian (Bahasa Indonesia)",
+        "en": "English",
+        "th": "Thai (ภาษาไทย)",
+        "ja": "Japanese (日本語)",
+        "ko": "Korean (한국어)",
+        "zh": "Chinese (中文)",
+        "es": "Spanish",
+        "fr": "French",
+        "de": "German",
+        "pt": "Portuguese",
+        "ru": "Russian",
+        "ar": "Arabic",
+        "hi": "Hindi",
+        "it": "Italian",
+        "nl": "Dutch",
+        "pl": "Polish",
+        "tr": "Turkish",
+        "vi": "Vietnamese",
+    }
+
+    language_instruction = ""
+    if language != "auto" and language in language_map:
+        language_name = language_map[language]
+        language_instruction = f"""
+
+🚨 LANGUAGE REQUIREMENT - READ THIS CAREFULLY:
+This transcript is in {language_name}. You MUST keep all segment.text in {language_name}.
+DO NOT translate segment.text to English, Indonesian, or any other language.
+Copy the text EXACTLY as it appears in the {language_name} transcript.
+Example: If transcript says "สวัสดีครับ" (Thai), segment.text must be "สวัสดีครับ" - NOT "Hello" or "Halo".
+"""
+
+    return f"""Analyze this video transcript and identify the most engaging segments for short-form content.{language_instruction}
 
 The transcript is formatted as one line per timestamped span, for example:
 [00:12 - 00:21] Spoken text here
@@ -309,11 +344,11 @@ Transcript:
 
 
 async def get_most_relevant_parts_by_transcript(
-    transcript: str, include_broll: bool = False
+    transcript: str, include_broll: bool = False, language: str = "auto"
 ) -> TranscriptAnalysis:
     """Get the most relevant parts of a transcript with virality scoring and optional B-roll detection."""
     logger.info(
-        f"Starting AI analysis of transcript ({len(transcript)} chars), include_broll={include_broll}"
+        f"Starting AI analysis of transcript ({len(transcript)} chars), include_broll={include_broll}, language={language}"
     )
 
     try:
@@ -321,7 +356,7 @@ async def get_most_relevant_parts_by_transcript(
 
         result = await agent.run(
             build_transcript_analysis_prompt(
-                transcript=transcript, include_broll=include_broll
+                transcript=transcript, include_broll=include_broll, language=language
             )
         )
 

@@ -95,6 +95,7 @@ async def process_video_task(
                     processing_mode=processing_mode,
                     output_format=output_format,
                     add_subtitles=add_subtitles,
+                    language=language,
                     progress_callback=update_progress,
                     should_cancel=should_cancel,
                     clip_ready_callback=clip_ready_callback,
