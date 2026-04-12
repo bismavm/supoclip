@@ -67,43 +67,43 @@ async def process_video_task(
             task_service = TaskService(db)
 
             try:
-            # Progress callback
-            async def update_progress(
-                percent: int, message: str, status: str = "processing"
-            ):
-                await progress.update(percent, message, status)
-                logger.info(f"Task {task_id}: {percent}% - {message}")
+                # Progress callback
+                async def update_progress(
+                    percent: int, message: str, status: str = "processing"
+                ):
+                    await progress.update(percent, message, status)
+                    logger.info(f"Task {task_id}: {percent}% - {message}")
 
-            async def should_cancel() -> bool:
-                cancelled = await ctx["redis"].get(f"task_cancel:{task_id}")
-                return bool(cancelled)
+                async def should_cancel() -> bool:
+                    cancelled = await ctx["redis"].get(f"task_cancel:{task_id}")
+                    return bool(cancelled)
 
-            async def clip_ready_callback(
-                clip_index: int, total_clips: int, clip_data: dict
-            ):
-                await progress.clip_ready(clip_index, total_clips, clip_data)
+                async def clip_ready_callback(
+                    clip_index: int, total_clips: int, clip_data: dict
+                ):
+                    await progress.clip_ready(clip_index, total_clips, clip_data)
 
-            # Process the video
-            result = await task_service.process_task(
-                task_id=task_id,
-                url=url,
-                source_type=source_type,
-                font_family=font_family,
-                font_size=font_size,
-                font_color=font_color,
-                caption_template=caption_template,
-                processing_mode=processing_mode,
-                output_format=output_format,
-                add_subtitles=add_subtitles,
-                progress_callback=update_progress,
-                should_cancel=should_cancel,
-                clip_ready_callback=clip_ready_callback,
-            )
+                # Process the video
+                result = await task_service.process_task(
+                    task_id=task_id,
+                    url=url,
+                    source_type=source_type,
+                    font_family=font_family,
+                    font_size=font_size,
+                    font_color=font_color,
+                    caption_template=caption_template,
+                    processing_mode=processing_mode,
+                    output_format=output_format,
+                    add_subtitles=add_subtitles,
+                    progress_callback=update_progress,
+                    should_cancel=should_cancel,
+                    clip_ready_callback=clip_ready_callback,
+                )
 
-            logger.info(f"Task {task_id} completed successfully")
-            return result
+                logger.info(f"Task {task_id} completed successfully")
+                return result
 
-        except Exception as e:
+            except Exception as e:
             logger.error(f"Task {task_id} failed: {e}", exc_info=True)
             try:
                 job_try = int(ctx.get("job_try", 1))
