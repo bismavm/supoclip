@@ -26,6 +26,7 @@ async def process_video_task(
     processing_mode: str = "fast",
     output_format: str = "vertical",
     add_subtitles: bool = True,
+    language: str = "ms",
     cleanup_settings: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
@@ -49,15 +50,23 @@ async def process_video_task(
     from ..workers.progress import ProgressTracker
 
     set_trace_id(f"task-{task_id}")
-    logger.info(f"Worker processing task {task_id}")
+    logger.info(f"Worker processing task {task_id} with language: {language}")
+
+    # Set transcription language for this task
+    from ..config import get_config
+    config = get_config()
+    original_language = config.transcription_language
+    config.transcription_language = language
+    logger.info(f"Transcription language set to: {language}")
 
     # Create progress tracker
     progress = ProgressTracker(ctx["redis"], task_id)
 
-    async with AsyncSessionLocal() as db:
-        task_service = TaskService(db)
+    try:
+        async with AsyncSessionLocal() as db:
+            task_service = TaskService(db)
 
-        try:
+            try:
             # Progress callback
             async def update_progress(
                 percent: int, message: str, status: str = "processing"
@@ -110,10 +119,15 @@ async def process_video_task(
                     )
                     await ctx["redis"].sadd("tasks:dead_letter", task_id)
                     await progress.error("Task failed permanently after retries")
-            except Exception:
-                logger.exception("Failed to persist dead-letter payload")
-            # Error will be caught by arq and task status will be updated
-            raise
+                except Exception:
+                    logger.exception("Failed to persist dead-letter payload")
+                # Error will be caught by arq and task status will be updated
+                raise
+    finally:
+        # Restore original language setting
+        config.transcription_language = original_language
+        logger.info(f"Restored transcription language to: {original_language}")
+
 
 # Worker configuration for arq
 class WorkerSettings:

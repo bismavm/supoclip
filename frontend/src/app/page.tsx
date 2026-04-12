@@ -104,6 +104,7 @@ export default function Home() {
   const [fontFamily, setFontFamily] = useState("TikTokSans-Regular");
   const [fontSize, setFontSize] = useState(24);
   const [fontColor, setFontColor] = useState("#FFFFFF");
+  const [language, setLanguage] = useState("ms");
   const [availableFonts, setAvailableFonts] = useState<FontOption[]>([]);
   const [showAdvancedOptions, setShowAdvancedOptions] = useState(true);
   const [fontSearch, setFontSearch] = useState("");
@@ -216,6 +217,7 @@ export default function Home() {
           setFontFamily(data.fontFamily || "TikTokSans-Regular");
           setFontSize(data.fontSize || 24);
           setFontColor(data.fontColor || "#FFFFFF");
+          setLanguage(data.language || "ms");
         }
       } catch (error) {
         console.error('Failed to load user preferences:', error);
@@ -446,6 +448,7 @@ export default function Home() {
             font_size: fontSize,
             font_color: normalizedColor
           },
+          language: language,
           caption_template: captionTemplate,
           include_broll: includeBroll,
           processing_mode: "fast",

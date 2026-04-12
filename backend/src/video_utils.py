@@ -34,6 +34,32 @@ config = Config()
 TRANSCRIPT_CACHE_SCHEMA_VERSION = 2
 
 
+def get_font_for_language(language_code: str, requested_font: str = "THEBOLDFONT") -> str:
+    """
+    Get appropriate font based on language to ensure character support.
+    Falls back to language-compatible fonts if default doesn't support the script.
+    """
+    # Map language codes to compatible fonts
+    language_font_map = {
+        "th": "NotoSansThai",      # Thai script
+        "ja": "NotoSansJP",         # Japanese (kanji, hiragana, katakana)
+        "ko": "NotoSansKR",         # Korean (hangul)
+        "zh": "NotoSansSC",         # Chinese Simplified
+        "ar": "NotoSansArabic",     # Arabic script
+        "hi": "NotoSansDevanagari", # Hindi (Devanagari)
+    }
+
+    # Check if language needs special font
+    fallback_font = language_font_map.get(language_code)
+
+    # Try requested font first, fallback to language-specific if needed
+    if fallback_font and config.transcription_language == language_code:
+        logger.info(f"Using language-specific font: {fallback_font} for language: {language_code}")
+        return fallback_font
+
+    return requested_font
+
+
 class VideoProcessor:
     """Handles video processing operations with optimized settings."""
 
@@ -43,10 +69,13 @@ class VideoProcessor:
         font_size: int = 24,
         font_color: str = "#FFFFFF",
     ):
-        self.font_family = font_family
+        # Auto-select font based on transcription language
+        language_aware_font = get_font_for_language(config.transcription_language, font_family)
+
+        self.font_family = language_aware_font
         self.font_size = font_size
         self.font_color = font_color
-        resolved_font = find_font_path(font_family, allow_all_user_fonts=True)
+        resolved_font = find_font_path(language_aware_font, allow_all_user_fonts=True)
         if not resolved_font:
             resolved_font = find_font_path("TikTokSans-Regular")
         if not resolved_font:

@@ -120,6 +120,13 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
     )
     font_size = _normalize_font_size(font_options.get("font_size", 24))
     font_color = _normalize_font_color(font_options.get("font_color", "#FFFFFF"))
+
+    # Get language from request or use default
+    language = data.get("language", "ms")
+    supported_languages = ["ms", "id", "en", "th", "ja", "ko", "zh", "es", "fr", "de", "pt", "ru", "ar", "hi", "it", "nl", "pl", "tr", "vi", "auto"]
+    if language not in supported_languages:
+        language = "ms"
+
     caption_template = data.get("caption_template", "default")
     include_broll = data.get("include_broll", False)
     processing_mode = data.get("processing_mode", config.default_processing_mode)
@@ -174,6 +181,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
             processing_mode,
             output_format,
             add_subtitles,
+            language,  # Pass language to worker
         )
 
         # Save source metadata for resume/retries in environments without sources.url column
@@ -188,6 +196,7 @@ async def create_task(request: Request, db: AsyncSession = Depends(get_db)):
                     "source_type": source_type,
                     "output_format": output_format,
                     "add_subtitles": add_subtitles,
+                    "language": language,
                 }),
                 ex=60 * 60 * 24 * 7,
             )

@@ -21,6 +21,7 @@ export async function GET(_: NextRequest) {
         default_font_family: true,
         default_font_size: true,
         default_font_color: true,
+        default_language: true,
         notify_on_completion: true,
       },
     });
@@ -36,6 +37,7 @@ export async function GET(_: NextRequest) {
       fontFamily: user.default_font_family || "TikTokSans-Regular",
       fontSize: user.default_font_size || 24,
       fontColor: user.default_font_color || "#FFFFFF",
+      language: user.default_language || "ms",
       notifyOnCompletion: user.notify_on_completion ?? true,
     });
   } catch (error) {
@@ -60,7 +62,7 @@ export async function PATCH(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { fontFamily, fontSize, fontColor, notifyOnCompletion } = body;
+    const { fontFamily, fontSize, fontColor, language, notifyOnCompletion } = body;
 
     // Validate inputs
     if (fontFamily && typeof fontFamily !== "string") {
@@ -84,6 +86,14 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    const supportedLanguages = ["ms", "id", "en", "th", "ja", "ko", "zh", "es", "fr", "de", "pt", "ru", "ar", "hi", "it", "nl", "pl", "tr", "vi", "auto"];
+    if (language && !supportedLanguages.includes(language)) {
+      return NextResponse.json(
+        { error: `Invalid language (must be one of: ${supportedLanguages.join(", ")})` },
+        { status: 400 }
+      );
+    }
+
     if (
       notifyOnCompletion !== undefined &&
       typeof notifyOnCompletion !== "boolean"
@@ -101,6 +111,7 @@ export async function PATCH(request: NextRequest) {
         ...(fontFamily !== undefined && { default_font_family: fontFamily }),
         ...(fontSize !== undefined && { default_font_size: fontSize }),
         ...(fontColor !== undefined && { default_font_color: fontColor }),
+        ...(language !== undefined && { default_language: language }),
         ...(notifyOnCompletion !== undefined && {
           notify_on_completion: notifyOnCompletion,
         }),
@@ -109,6 +120,7 @@ export async function PATCH(request: NextRequest) {
         default_font_family: true,
         default_font_size: true,
         default_font_color: true,
+        default_language: true,
         notify_on_completion: true,
       },
     });
@@ -117,6 +129,7 @@ export async function PATCH(request: NextRequest) {
       fontFamily: updatedUser.default_font_family,
       fontSize: updatedUser.default_font_size,
       fontColor: updatedUser.default_font_color,
+      language: updatedUser.default_language,
       notifyOnCompletion: updatedUser.notify_on_completion,
     });
   } catch (error) {

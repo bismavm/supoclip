@@ -14,12 +14,13 @@ import { Switch } from "@/components/ui/switch";
 import { signOut, useSession } from "@/lib/auth-client";
 import { track } from "@/lib/datafast";
 import Link from "next/link";
-import { Type, Palette, CheckCircle, AlertCircle, Settings, ArrowLeft, Mail } from "lucide-react";
+import { Type, Palette, CheckCircle, AlertCircle, Settings, ArrowLeft, Mail, Languages } from "lucide-react";
 
 interface UserPreferences {
   fontFamily: string;
   fontSize: number;
   fontColor: string;
+  language: string;
   notifyOnCompletion: boolean;
 }
 
@@ -36,6 +37,7 @@ export default function SettingsPage() {
   const [fontFamily, setFontFamily] = useState("TikTokSans-Regular");
   const [fontSize, setFontSize] = useState(24);
   const [fontColor, setFontColor] = useState("#FFFFFF");
+  const [language, setLanguage] = useState("ms");
   const [completionEmails, setCompletionEmails] = useState(true);
   const [availableFonts, setAvailableFonts] = useState<Array<{ name: string, display_name: string }>>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -104,6 +106,7 @@ export default function SettingsPage() {
           setFontFamily(data.fontFamily);
           setFontSize(data.fontSize);
           setFontColor(data.fontColor);
+          setLanguage(data.language || "ms");
           setCompletionEmails(data.notifyOnCompletion ?? true);
         }
       } catch (error) {
@@ -179,6 +182,7 @@ export default function SettingsPage() {
           fontFamily,
           fontSize,
           fontColor,
+          language,
           notifyOnCompletion: completionEmails,
         }),
       });
@@ -301,6 +305,40 @@ export default function SettingsPage() {
                 </h3>
                 <p className="text-sm text-gray-600">
                   These settings will be applied to all new video processing tasks
+                </p>
+              </div>
+
+              {/* Language Selector */}
+              <div className="space-y-2">
+                <Label className="text-sm font-medium text-black flex items-center gap-2">
+                  <Languages className="w-4 h-4" />
+                  Transcription Language
+                </Label>
+                <Select value={language} onValueChange={setLanguage} disabled={isLoading}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ms">🇲🇾 Bahasa Malaysia (Malay)</SelectItem>
+                    <SelectItem value="id">🇮🇩 Bahasa Indonesia</SelectItem>
+                    <SelectItem value="en">🇬🇧 English</SelectItem>
+                    <SelectItem value="th">🇹🇭 ภาษาไทย (Thai)</SelectItem>
+                    <SelectItem value="zh">🇨🇳 中文 (Chinese)</SelectItem>
+                    <SelectItem value="ja">🇯🇵 日本語 (Japanese)</SelectItem>
+                    <SelectItem value="ko">🇰🇷 한국어 (Korean)</SelectItem>
+                    <SelectItem value="vi">🇻🇳 Tiếng Việt (Vietnamese)</SelectItem>
+                    <SelectItem value="es">🇪🇸 Español (Spanish)</SelectItem>
+                    <SelectItem value="fr">🇫🇷 Français (French)</SelectItem>
+                    <SelectItem value="de">🇩🇪 Deutsch (German)</SelectItem>
+                    <SelectItem value="pt">🇵🇹 Português (Portuguese)</SelectItem>
+                    <SelectItem value="ru">🇷🇺 Русский (Russian)</SelectItem>
+                    <SelectItem value="ar">🇸🇦 العربية (Arabic)</SelectItem>
+                    <SelectItem value="hi">🇮🇳 हिन्दी (Hindi)</SelectItem>
+                    <SelectItem value="auto">🔄 Auto-detect</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-gray-500">
+                  Default language for video transcription. Subtitles will automatically use the correct font for the selected language.
                 </p>
               </div>
 
