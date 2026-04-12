@@ -26,7 +26,7 @@ async def process_video_task(
     processing_mode: str = "fast",
     output_format: str = "vertical",
     add_subtitles: bool = True,
-    language: str = "ms",
+    language: str | None = None,
     cleanup_settings: Dict[str, Any] | None = None,
 ) -> Dict[str, Any]:
     """
@@ -50,14 +50,18 @@ async def process_video_task(
     from ..workers.progress import ProgressTracker
 
     set_trace_id(f"task-{task_id}")
-    logger.info(f"Worker processing task {task_id} with language: {language}")
 
     # Set transcription language for this task
     from ..config import get_config
     config = get_config()
     original_language = config.transcription_language
-    config.transcription_language = language
-    logger.info(f"Transcription language set to: {language}")
+
+    # Use language parameter if provided, otherwise use config default
+    effective_language = language if language is not None else config.transcription_language
+    logger.info(f"Worker processing task {task_id} with language: {effective_language} (from {'parameter' if language else 'config'})")
+
+    config.transcription_language = effective_language
+    logger.info(f"Transcription language set to: {effective_language}")
 
     # Create progress tracker
     progress = ProgressTracker(ctx["redis"], task_id)
@@ -95,7 +99,7 @@ async def process_video_task(
                     processing_mode=processing_mode,
                     output_format=output_format,
                     add_subtitles=add_subtitles,
-                    language=language,
+                    language=effective_language,
                     progress_callback=update_progress,
                     should_cancel=should_cancel,
                     clip_ready_callback=clip_ready_callback,

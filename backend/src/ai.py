@@ -273,9 +273,15 @@ def get_transcript_agent() -> Agent[None, TranscriptAnalysis]:
 
 
 def build_transcript_analysis_prompt(
-    transcript: str, include_broll: bool = False, language: str = "auto"
+    transcript: str, include_broll: bool = False, language: str | None = None
 ) -> str:
     """Build the grounded task prompt for transcript analysis."""
+    from ..config import get_config
+    config = get_config()
+
+    # Use language parameter if provided, otherwise use config default
+    effective_language = language if language is not None else config.transcription_language
+
     broll_instruction = ""
     if include_broll:
         broll_instruction = (
@@ -306,8 +312,8 @@ def build_transcript_analysis_prompt(
     }
 
     language_instruction = ""
-    if language != "auto" and language in language_map:
-        language_name = language_map[language]
+    if effective_language != "auto" and effective_language in language_map:
+        language_name = language_map[effective_language]
         language_instruction = f"""
 
 🚨 LANGUAGE REQUIREMENT - READ THIS CAREFULLY:
@@ -344,23 +350,29 @@ Transcript:
 
 
 async def get_most_relevant_parts_by_transcript(
-    transcript: str, include_broll: bool = False, language: str = "auto"
+    transcript: str, include_broll: bool = False, language: str | None = None
 ) -> TranscriptAnalysis:
     """Get the most relevant parts of a transcript with virality scoring and optional B-roll detection."""
+    from ..config import get_config
+    config = get_config()
+
+    # Use language parameter if provided, otherwise use config default
+    effective_language = language if language is not None else config.transcription_language
+
     logger.info(
-        f"Starting AI analysis of transcript ({len(transcript)} chars), include_broll={include_broll}, language={language}"
+        f"Starting AI analysis of transcript ({len(transcript)} chars), include_broll={include_broll}, language={effective_language}"
     )
 
     try:
         agent = get_transcript_agent()
 
         prompt = build_transcript_analysis_prompt(
-            transcript=transcript, include_broll=include_broll, language=language
+            transcript=transcript, include_broll=include_broll, language=effective_language
         )
 
         # Log language instruction for debugging
-        if language != "auto":
-            logger.info(f"🌐 LANGUAGE MODE ACTIVE: Forcing {language} language in segment.text")
+        if effective_language != "auto":
+            logger.info(f"🌐 LANGUAGE MODE ACTIVE: Forcing {effective_language} language in segment.text")
 
         result = await agent.run(prompt)
 
@@ -426,7 +438,7 @@ async def get_most_relevant_parts_by_transcript(
                 validated_segments.append(segment)
 
                 # Log segment text for language debugging
-                if language != "auto":
+                if effective_language != "auto":
                     logger.debug(f"Segment {len(validated_segments)} text: {segment.text[:100]}...")
 
                 virality_info = (

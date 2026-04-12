@@ -134,7 +134,7 @@ class TaskService:
         processing_mode: str = "fast",
         output_format: str = "vertical",
         add_subtitles: bool = True,
-        language: str = "auto",
+        language: str | None = None,
         progress_callback: Optional[Callable] = None,
         should_cancel: Optional[Callable] = None,
         clip_ready_callback: Optional[Callable] = None,
@@ -144,10 +144,16 @@ class TaskService:
         Returns processing results.
         """
         try:
-            logger.info(f"Starting processing for task {task_id} with language: {language}")
+            from ..config import get_config
+            config = get_config()
+
+            # Use language parameter if provided, otherwise use config default
+            effective_language = language if language is not None else config.transcription_language
+            logger.info(f"Starting processing for task {task_id} with language: {effective_language} (from {'parameter' if language else 'config'})")
+
             started_at = datetime.utcnow()
             stage_timings: Dict[str, float] = {}
-            cache_key = self._build_cache_key(url, source_type, processing_mode, language)
+            cache_key = self._build_cache_key(url, source_type, processing_mode, effective_language)
 
             cache_entry = await self.cache_repo.get_cache(self.db, cache_key)
             cached_transcript = (
@@ -201,7 +207,7 @@ class TaskService:
                 processing_mode=processing_mode,
                 output_format=output_format,
                 add_subtitles=add_subtitles,
-                language=language,
+                language=effective_language,
                 cached_transcript=cached_transcript,
                 cached_analysis_json=cached_analysis_json,
                 progress_callback=update_progress,

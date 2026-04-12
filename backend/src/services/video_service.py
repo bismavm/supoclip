@@ -103,13 +103,14 @@ class VideoService:
         return transcript
 
     @staticmethod
-    async def analyze_transcript(transcript: str, language: str = "auto") -> Any:
+    async def analyze_transcript(transcript: str, language: str | None = None) -> Any:
         """
         Analyze transcript with AI to find relevant segments.
         This is already async, no need to wrap.
         """
-        logger.info(f"Starting AI analysis of transcript (language: {language})")
-        relevant_parts = await get_most_relevant_parts_by_transcript(transcript, language=language)
+        effective_language = language if language is not None else config.transcription_language
+        logger.info(f"Starting AI analysis of transcript (language: {effective_language})")
+        relevant_parts = await get_most_relevant_parts_by_transcript(transcript, language=effective_language)
         logger.info(
             f"AI analysis complete: {len(relevant_parts.most_relevant_segments)} segments found"
         )
@@ -259,7 +260,7 @@ class VideoService:
         processing_mode: str = "fast",
         output_format: str = "vertical",
         add_subtitles: bool = True,
-        language: str = "auto",
+        language: str | None = None,
         cached_transcript: Optional[str] = None,
         cached_analysis_json: Optional[str] = None,
         progress_callback: Optional[Callable[[int, str, str], Awaitable[None]]] = None,
@@ -273,6 +274,10 @@ class VideoService:
                           Signature: async def callback(progress: int, message: str, status: str)
         """
         try:
+            # Use language parameter if provided, otherwise use config default
+            effective_language = language if language is not None else config.transcription_language
+            logger.info(f"Processing video with language: {effective_language}")
+
             # Step 1: Get video path (download or use existing)
             if should_cancel and await should_cancel():
                 raise Exception("Task cancelled")
@@ -355,7 +360,7 @@ class VideoService:
                     relevant_parts = None
 
             if relevant_parts is None:
-                relevant_parts = await VideoService.analyze_transcript(transcript, language=language)
+                relevant_parts = await VideoService.analyze_transcript(transcript, language=effective_language)
 
             # Step 4: Create clips
             if should_cancel and await should_cancel():
