@@ -104,21 +104,21 @@ async def process_video_task(
                 return result
 
             except Exception as e:
-            logger.error(f"Task {task_id} failed: {e}", exc_info=True)
-            try:
-                job_try = int(ctx.get("job_try", 1))
-                max_tries = int(getattr(WorkerSettings, "max_tries", 3))
-                if job_try >= max_tries:
-                    payload = {
-                        "task_id": task_id,
-                        "error": str(e),
-                        "tries": job_try,
-                    }
-                    await ctx["redis"].set(
-                        f"dead_letter:{task_id}", json.dumps(payload)
-                    )
-                    await ctx["redis"].sadd("tasks:dead_letter", task_id)
-                    await progress.error("Task failed permanently after retries")
+                logger.error(f"Task {task_id} failed: {e}", exc_info=True)
+                try:
+                    job_try = int(ctx.get("job_try", 1))
+                    max_tries = int(getattr(WorkerSettings, "max_tries", 3))
+                    if job_try >= max_tries:
+                        payload = {
+                            "task_id": task_id,
+                            "error": str(e),
+                            "tries": job_try,
+                        }
+                        await ctx["redis"].set(
+                            f"dead_letter:{task_id}", json.dumps(payload)
+                        )
+                        await ctx["redis"].sadd("tasks:dead_letter", task_id)
+                        await progress.error("Task failed permanently after retries")
                 except Exception:
                     logger.exception("Failed to persist dead-letter payload")
                 # Error will be caught by arq and task status will be updated
