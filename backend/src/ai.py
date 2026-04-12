@@ -11,7 +11,7 @@ import re
 from pydantic_ai import Agent
 from pydantic import BaseModel, Field
 
-from .config import Config
+from .config import Config, get_config
 
 logger = logging.getLogger(__name__)
 config = Config()
@@ -276,9 +276,6 @@ def build_transcript_analysis_prompt(
     transcript: str, include_broll: bool = False, language: str | None = None
 ) -> str:
     """Build the grounded task prompt for transcript analysis."""
-    from ..config import get_config
-    config = get_config()
-
     # Use language parameter if provided, otherwise use config default
     effective_language = language if language is not None else config.transcription_language
 
@@ -353,9 +350,6 @@ async def get_most_relevant_parts_by_transcript(
     transcript: str, include_broll: bool = False, language: str | None = None
 ) -> TranscriptAnalysis:
     """Get the most relevant parts of a transcript with virality scoring and optional B-roll detection."""
-    from ..config import get_config
-    config = get_config()
-
     # Use language parameter if provided, otherwise use config default
     effective_language = language if language is not None else config.transcription_language
 

@@ -144,7 +144,6 @@ class TaskService:
         Returns processing results.
         """
         try:
-            from ..config import get_config
             config = get_config()
 
             # Use language parameter if provided, otherwise use config default
