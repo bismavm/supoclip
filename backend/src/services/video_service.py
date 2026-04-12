@@ -56,100 +56,83 @@ class VideoService:
     """Service for video processing operations."""
 
     @staticmethod
-    async def translate_segment_texts(segments: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
-        """
-        🌐 POST-PROCESSING: Translate all segment texts to target language using Gemini.
-        This ensures correct language and script regardless of AI output.
-        GUARANTEED to run before video rendering.
-        """
-        logger.info(f"🔍 TRANSLATE CALLED: target_language='{target_language}', segments={len(segments)}")
+    def translate_text_sync(text: str, target_language: str) -> str:
+        """Simple synchronous translation using Gemini REST API."""
+        import requests
 
-        if target_language == "auto" or not target_language:
-            logger.info("⏭️ No target language specified, skipping translation")
-            return segments
+        if not config.google_api_key:
+            return text
 
-        language_name = LANGUAGE_NAMES.get(target_language, target_language)
-        logger.info(f"🌐 STARTING TRANSLATION: {len(segments)} segments → {language_name} ({target_language})")
+        language_map = {
+            "ms": "Malay", "id": "Indonesian", "en": "English", "th": "Thai",
+            "ja": "Japanese", "ko": "Korean", "zh": "Chinese", "es": "Spanish",
+            "fr": "French", "de": "German", "pt": "Portuguese", "ru": "Russian",
+            "ar": "Arabic", "hi": "Hindi", "it": "Italian", "nl": "Dutch",
+            "pl": "Polish", "tr": "Turkish", "vi": "Vietnamese",
+        }
+
+        language_name = language_map.get(target_language, target_language)
+
+        prompt = f"""Translate this text to {language_name}. Use native {language_name} script and characters.
+
+Text: {text}
+
+Rules:
+- Output ONLY the translated text
+- Use proper {language_name} script (Thai: ภาษาไทย, Japanese: 日本語, Arabic: العربية)
+- NO explanations, just translation"""
 
         try:
-            logger.info("📦 Importing google.genai...")
-            from google import genai
-            from google.genai import types
-            logger.info("✅ Import successful!")
-
-            # Configure Gemini
-            api_key_status = "SET" if config.google_api_key else "MISSING"
-            logger.info(f"🔑 Google API key status: {api_key_status}")
-
-            if not config.google_api_key:
-                logger.error("❌ TRANSLATION FAILED: No GOOGLE_API_KEY found!")
-                logger.warning("Falling back to original text without translation")
-                return segments
-
-            logger.info(f"✅ Google API key found (length: {len(config.google_api_key)}), initializing Gemini...")
-
-            # Use Google AI SDK (genai)
-            client = genai.Client(api_key=config.google_api_key)
-            model_name = "gemini-2.0-flash-exp"
-
-            translated_segments = []
-            for i, segment in enumerate(segments):
-                original_text = segment.get("text", "")
-                if not original_text.strip():
-                    logger.debug(f"Segment {i+1}: Empty text, skipping")
-                    translated_segments.append(segment)
-                    continue
-
-                # Translate using Gemini
-                prompt = f"""Translate this text to {language_name}. Use native script and characters.
-
-Original text: {original_text}
-
-CRITICAL RULES:
-- Output ONLY the translated text in {language_name}
-- Use proper {language_name} script (e.g., Thai: ภาษาไทย, Japanese: 日本語, Arabic: العربية)
-- NO explanations, NO English, JUST the translation
-- Keep the same meaning and tone"""
-
-                try:
-                    logger.debug(f"🔄 Translating segment {i+1}/{len(segments)}...")
-
-                    # Use Google Genai SDK
-                    response = client.models.generate_content(
-                        model=model_name,
-                        contents=prompt
-                    )
-
-                    # Extract text from response
-                    if hasattr(response, 'text'):
-                        translated_text = response.text.strip()
-                    elif hasattr(response, 'candidates') and response.candidates:
-                        translated_text = response.candidates[0].content.parts[0].text.strip()
-                    else:
-                        raise ValueError("Cannot extract text from Gemini response")
-
-                    if not translated_text:
-                        raise ValueError("Empty response from Gemini")
-
-                    # Update segment with translated text
-                    updated_segment = segment.copy()
-                    updated_segment["text"] = translated_text
-                    translated_segments.append(updated_segment)
-
-                    logger.info(f"✅ Segment {i+1}/{len(segments)}: '{original_text[:40]}...' → '{translated_text[:40]}...'")
-
-                except Exception as e:
-                    logger.error(f"❌ Translation failed for segment {i+1}: {e}")
-                    logger.warning(f"Using original text: {original_text[:50]}...")
-                    translated_segments.append(segment)
-
-            logger.info(f"🎉 TRANSLATION COMPLETE! Translated {len(translated_segments)} segments")
-            return translated_segments
-
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key={config.google_api_key}"
+            response = requests.post(
+                url,
+                json={"contents": [{"parts": [{"text": prompt}]}]},
+                timeout=30
+            )
+            response.raise_for_status()
+            result = response.json()
+            translated = result['candidates'][0]['content']['parts'][0]['text'].strip()
+            return translated
         except Exception as e:
-            logger.error(f"❌ TRANSLATION PROCESS CRASHED: {e}", exc_info=True)
-            logger.warning("Falling back to original segments")
+            logger.error(f"Translation failed: {e}")
+            return text
+
+    @staticmethod
+    async def translate_segment_texts(segments: List[Dict[str, Any]], target_language: str) -> List[Dict[str, Any]]:
+        """Translate segment texts to target language using Gemini REST API."""
+        from ..utils.async_helpers import run_in_thread
+
+        logger.info(f"🌐 Translating {len(segments)} segments to {target_language}")
+
+        if not target_language or target_language == "auto":
             return segments
+
+        if not config.google_api_key:
+            logger.error("❌ No GOOGLE_API_KEY, skipping translation")
+            return segments
+
+        translated = []
+        for i, seg in enumerate(segments):
+            text = seg.get("text", "")
+            if not text.strip():
+                translated.append(seg)
+                continue
+
+            logger.info(f"🔄 Translating {i+1}/{len(segments)}: {text[:50]}...")
+
+            # Run translation in thread pool
+            translated_text = await run_in_thread(
+                VideoService.translate_text_sync, text, target_language
+            )
+
+            updated_seg = seg.copy()
+            updated_seg["text"] = translated_text
+            translated.append(updated_seg)
+
+            logger.info(f"✅ Result: {translated_text[:50]}...")
+
+        logger.info(f"🎉 Translation complete!")
+        return translated
 
     @staticmethod
     def _get_file_duration(path: Path) -> Optional[float]:
