@@ -617,10 +617,9 @@ def _get_video_transcript_assemblyai(video_path: Path, speech_model: str = "best
         "speech_models": ["universal-2"],
     }
 
-    # Add language code if not auto-detect
-    if config.transcription_language and config.transcription_language != "auto":
-        transcript_payload["language_code"] = config.transcription_language
-        logger.info(f"Using language code: {config.transcription_language}")
+    # HARDCODED: Always use Thai for transcription
+    transcript_payload["language_code"] = "th"
+    logger.info(f"🇹🇭 HARDCODED: Using language code: th (Thai)")
     create_response = requests.post(
         "https://api.assemblyai.com/v2/transcript",
         headers={**headers, "content-type": "application/json"},

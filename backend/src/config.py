@@ -28,9 +28,8 @@ class Config:
         self.transcription_provider = self._normalize_transcription_provider(
             os.getenv("TRANSCRIPTION_PROVIDER", "google_genai")
         )
-        self.transcription_language = self._normalize_language_code(
-            os.getenv("TRANSCRIPTION_LANGUAGE", "ms")
-        )
+        # HARDCODED: Always Thai
+        self.transcription_language = "th"  # HARDCODED THAI
         self.gemini_transcription_model = (
             self._get_optional_env("GEMINI_TRANSCRIPTION_MODEL")
             or "gemini-3-flash-preview"
