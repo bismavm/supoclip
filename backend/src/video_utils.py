@@ -1282,6 +1282,11 @@ def apply_smart_crop_with_ffmpeg(
 
             # Generate FFmpeg filter based on strategy
             strategy_name = decision.strategy.value
+            logger.info(
+                f"Scene {idx}: {scene_start:.1f}s-{scene_end:.1f}s strategy={strategy_name} "
+                f"boxes={decision.target_boxes}"
+            )
+
             filter_str = generate_crop_filter(
                 strategy_name,
                 decision.target_boxes,
@@ -1290,8 +1295,6 @@ def apply_smart_crop_with_ffmpeg(
                 target_width,
                 target_height
             )
-
-            logger.info(f"Scene {idx}: {scene_start:.1f}s-{scene_end:.1f}s strategy={strategy_name}")
 
             # Process scene with FFmpeg
             success = process_scene_with_ffmpeg(

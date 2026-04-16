@@ -48,9 +48,11 @@ def generate_crop_filter(
             crop_x = crop_x - (crop_x % 2)
             crop_y = crop_y - (crop_y % 2)
 
+            logger.info(f"TRACK: box={target_boxes[0]}, center=({box_center_x},{box_center_y}), crop_pos=({crop_x},{crop_y})")
             return f"crop={target_width}:{target_height}:{crop_x}:{crop_y}"
         else:
             # Center crop
+            logger.warning("TRACK strategy but no target_boxes, using center crop")
             crop_x = (original_width - target_width) // 2
             crop_y = (original_height - target_height) // 2
             crop_x = crop_x - (crop_x % 2)

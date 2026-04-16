@@ -238,7 +238,10 @@ def decide_crop_strategy(
     if num_people == 1:
         person = detections[0]
         target_box = person.face_box if person.face_box else person.person_box
-        logger.info(f"Strategy: TRACK (1 person, tracking {'face' if person.face_box else 'person'})")
+        logger.info(
+            f"Strategy: TRACK (1 person, tracking {'face' if person.face_box else 'person'}) "
+            f"box={target_box}"
+        )
         return CropDecision(
             strategy=CropStrategy.TRACK,
             target_boxes=[target_box],
