@@ -630,3 +630,142 @@ def analyze_clip_and_decide_strategy(
     )
 
     return decision
+
+
+def detect_scene_changes(
+    video_clip,
+    start_time: float,
+    end_time: float,
+    threshold: float = 30.0,
+    min_scene_length: float = 2.0
+) -> List[Tuple[float, float]]:
+    """
+    Detect scene changes within a clip using frame difference.
+
+    Args:
+        video_clip: MoviePy VideoFileClip
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        threshold: Threshold for scene change detection (0-100, higher = less sensitive)
+        min_scene_length: Minimum scene length in seconds
+
+    Returns:
+        List of (scene_start, scene_end) tuples in seconds
+    """
+    import numpy as np
+
+    duration = end_time - start_time
+    if duration <= min_scene_length:
+        # Too short to have multiple scenes
+        return [(start_time, end_time)]
+
+    # Sample frames for scene detection (1 frame per 0.5 seconds)
+    sample_interval = 0.5
+    num_samples = int(duration / sample_interval)
+    num_samples = min(num_samples, 100)  # Cap at 100 samples
+
+    if num_samples < 2:
+        return [(start_time, end_time)]
+
+    times = [start_time + (i * duration / num_samples) for i in range(num_samples)]
+
+    # Get frame differences
+    prev_frame = None
+    frame_diffs = []
+    frame_times = []
+
+    for t in times:
+        try:
+            frame = video_clip.get_frame(t)
+
+            if prev_frame is not None:
+                # Calculate mean absolute difference
+                diff = np.mean(np.abs(frame.astype(float) - prev_frame.astype(float)))
+                frame_diffs.append(diff)
+                frame_times.append(t)
+
+            prev_frame = frame
+        except Exception as e:
+            logger.debug(f"Failed to get frame at {t}s: {e}")
+            continue
+
+    if not frame_diffs:
+        return [(start_time, end_time)]
+
+    # Normalize differences to 0-100 scale
+    max_diff = max(frame_diffs) if frame_diffs else 1
+    normalized_diffs = [(d / max_diff * 100) if max_diff > 0 else 0 for d in frame_diffs]
+
+    # Find scene boundaries
+    scene_boundaries = [start_time]
+
+    for i, (diff, t) in enumerate(zip(normalized_diffs, frame_times)):
+        if diff > threshold:
+            # Potential scene change
+            last_boundary = scene_boundaries[-1]
+            if t - last_boundary >= min_scene_length:
+                scene_boundaries.append(t)
+
+    # Add end time
+    if scene_boundaries[-1] != end_time:
+        scene_boundaries.append(end_time)
+
+    # Create scene pairs
+    scenes = []
+    for i in range(len(scene_boundaries) - 1):
+        scenes.append((scene_boundaries[i], scene_boundaries[i + 1]))
+
+    logger.info(f"Detected {len(scenes)} scenes in clip ({start_time:.1f}s - {end_time:.1f}s)")
+
+    return scenes
+
+
+def analyze_clip_with_scene_detection(
+    video_clip,
+    start_time: float,
+    end_time: float,
+    target_ratio: float = 9 / 16,
+    enable_scene_detection: bool = True
+) -> List[Tuple[float, float, CropDecision]]:
+    """
+    Analyze clip and detect scenes, returning strategy per scene.
+
+    Args:
+        video_clip: MoviePy VideoFileClip
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        target_ratio: Target aspect ratio
+        enable_scene_detection: Enable automatic scene detection
+
+    Returns:
+        List of (scene_start, scene_end, CropDecision) tuples
+    """
+    logger.info(
+        f"Analyzing clip with scene detection: {start_time:.1f}s - {end_time:.1f}s "
+        f"(scene_detection={enable_scene_detection})"
+    )
+
+    if not enable_scene_detection or (end_time - start_time) < 5.0:
+        # No scene detection for short clips
+        decision = analyze_clip_and_decide_strategy(
+            video_clip, start_time, end_time, target_ratio
+        )
+        return [(start_time, end_time, decision)]
+
+    # Detect scenes
+    scenes = detect_scene_changes(video_clip, start_time, end_time)
+
+    # Analyze each scene
+    scene_decisions = []
+    for scene_start, scene_end in scenes:
+        decision = analyze_clip_and_decide_strategy(
+            video_clip, scene_start, scene_end, target_ratio, num_samples=3
+        )
+        scene_decisions.append((scene_start, scene_end, decision))
+
+        logger.info(
+            f"  Scene {scene_start:.1f}s - {scene_end:.1f}s: "
+            f"{decision.strategy.value} ({decision.num_people} people)"
+        )
+
+    return scene_decisions

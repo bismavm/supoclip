@@ -94,6 +94,9 @@ class Config:
         # Smart cropping features (blur background, stacking, transitions)
         self.enable_smart_cropping = self._get_bool_env("ENABLE_SMART_CROPPING", True)
 
+        # Scene detection for dynamic per-scene cropping strategies
+        self.enable_scene_detection = self._get_bool_env("ENABLE_SCENE_DETECTION", True)
+
     @staticmethod
     def _get_optional_env(name: str):
         value = os.getenv(name)

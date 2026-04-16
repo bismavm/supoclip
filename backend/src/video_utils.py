@@ -30,6 +30,7 @@ from .caption_templates import get_template, CAPTION_TEMPLATES
 from .font_registry import find_font_path
 from .smart_cropping import (
     analyze_clip_and_decide_strategy,
+    analyze_clip_with_scene_detection,
     CropStrategy,
     apply_letterbox_blur,
     create_stacking_layout,
@@ -1188,6 +1189,171 @@ def apply_smart_crop_to_clip(
         )
 
 
+def apply_smart_crop_with_scenes(
+    video_clip: VideoFileClip,
+    start_time: float,
+    end_time: float,
+    target_ratio: float = 9 / 16,
+    enable_scene_detection: bool = True,
+) -> VideoFileClip:
+    """
+    Apply smart cropping with automatic scene detection.
+    Each scene can have different cropping strategy (blur, stacking, tracking).
+
+    Args:
+        video_clip: Source video clip
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        target_ratio: Target aspect ratio (width/height)
+        enable_scene_detection: Enable automatic scene detection
+
+    Returns:
+        Processed video clip with scene-based smart cropping
+    """
+    try:
+        logger.info(
+            f"Applying scene-based smart crop: {start_time:.1f}s - {end_time:.1f}s "
+            f"(scene_detection={enable_scene_detection})"
+        )
+
+        # Analyze clip and get strategy per scene
+        scene_decisions = analyze_clip_with_scene_detection(
+            video_clip, start_time, end_time, target_ratio, enable_scene_detection
+        )
+
+        if len(scene_decisions) == 1:
+            # Only one scene, use simple processing
+            scene_start, scene_end, decision = scene_decisions[0]
+            return _process_scene_with_strategy(
+                video_clip, scene_start, scene_end, decision, target_ratio
+            )
+
+        # Multiple scenes, process each and concatenate
+        from moviepy import concatenate_videoclips
+
+        processed_scenes = []
+        for scene_start, scene_end, decision in scene_decisions:
+            processed_scene = _process_scene_with_strategy(
+                video_clip, scene_start, scene_end, decision, target_ratio
+            )
+            processed_scenes.append(processed_scene)
+
+        # Concatenate all scenes
+        final_clip = concatenate_videoclips(processed_scenes, method="compose")
+
+        logger.info(
+            f"Successfully processed {len(scene_decisions)} scenes with smart cropping"
+        )
+
+        return final_clip
+
+    except Exception as e:
+        logger.error(f"Scene-based smart crop failed: {e}, falling back to simple crop")
+        import traceback
+        traceback.print_exc()
+
+        # Fallback to simple smart crop (no scene detection)
+        return apply_smart_crop_to_clip(
+            video_clip, start_time, end_time, target_ratio, enable_smart_features=True
+        )
+
+
+def _process_scene_with_strategy(
+    video_clip: VideoFileClip,
+    scene_start: float,
+    scene_end: float,
+    decision: "CropDecision",
+    target_ratio: float,
+) -> VideoFileClip:
+    """
+    Process a single scene with the given cropping strategy.
+
+    Args:
+        video_clip: Full video clip
+        scene_start: Scene start time
+        scene_end: Scene end time
+        decision: CropDecision with strategy
+        target_ratio: Target aspect ratio
+
+    Returns:
+        Processed scene clip
+    """
+    # Extract scene
+    scene_clip = video_clip.subclipped(scene_start, scene_end)
+
+    original_width, original_height = video_clip.size
+    target_height = original_height
+    if target_height % 2 != 0:
+        target_height += 1
+    target_width = int(target_height * target_ratio)
+    if target_width % 2 != 0:
+        target_width += 1
+
+    strategy = decision.strategy
+
+    # Apply strategy
+    if strategy == CropStrategy.TRACK:
+        # Crop to target box
+        if decision.target_boxes:
+            target_box = decision.target_boxes[0]
+            x1, y1, x2, y2 = target_box
+
+            box_center_x = (x1 + x2) // 2
+            box_center_y = (y1 + y2) // 2
+
+            crop_x = max(0, min(box_center_x - target_width // 2, original_width - target_width))
+            crop_y = max(0, min(box_center_y - target_height // 2, original_height - target_height))
+
+            crop_x = round_to_even(crop_x)
+            crop_y = round_to_even(crop_y)
+
+            return scene_clip.cropped(
+                x1=crop_x, y1=crop_y,
+                x2=crop_x + target_width, y2=crop_y + target_height
+            )
+        else:
+            # Center crop
+            crop_x = (original_width - target_width) // 2
+            crop_y = (original_height - target_height) // 2
+            return scene_clip.cropped(
+                x1=crop_x, y1=crop_y,
+                x2=crop_x + target_width, y2=crop_y + target_height
+            )
+
+    elif strategy == CropStrategy.LETTERBOX_BLUR:
+        # Apply blur background frame-by-frame
+        def process_frame(frame):
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
+            return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+        return scene_clip.fl_image(process_frame).with_fps(scene_clip.fps)
+
+    elif strategy == CropStrategy.STACKING:
+        # Apply stacking layout frame-by-frame
+        def process_frame(frame):
+            frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+            result_bgr = create_stacking_layout(
+                frame_bgr,
+                decision.target_boxes,
+                target_width,
+                target_height,
+                decision.metadata.get("split_ratio", 0.5)
+            )
+            return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+        return scene_clip.fl_image(process_frame).with_fps(scene_clip.fps)
+
+    else:
+        # Fallback: center crop
+        crop_x = (original_width - target_width) // 2
+        crop_y = (original_height - target_height) // 2
+        return scene_clip.cropped(
+            x1=crop_x, y1=crop_y,
+            x2=crop_x + target_width, y2=crop_y + target_height
+        )
+
+
 def detect_faces_in_clip(
     video_clip: VideoFileClip, start_time: float, end_time: float
 ) -> List[Tuple[int, int, int, float]]:
@@ -2006,12 +2172,24 @@ def create_optimized_clip(
                 processed_clip = processed_clip.resized((target_width, target_height))
             cropped_clip = None
         else:
-            # Vertical 9:16: apply smart cropping with person detection
-            # Features: blur background, stacking, smooth transitions
+            # Vertical 9:16: apply smart cropping with person detection & scene detection
+            # Features: blur background, stacking, smooth transitions, per-scene strategies
             enable_smart = config.enable_smart_cropping
-            cropped_clip = apply_smart_crop_to_clip(
-                video, start_time, end_time, target_ratio=9 / 16, enable_smart_features=enable_smart
-            )
+
+            if enable_smart:
+                # Use scene-based smart cropping (can change strategy per scene)
+                enable_scenes = config.enable_scene_detection
+                cropped_clip = apply_smart_crop_with_scenes(
+                    video, start_time, end_time, target_ratio=9 / 16, enable_scene_detection=enable_scenes
+                )
+            else:
+                # Fallback to simple crop
+                x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+                    video, start_time, end_time, target_ratio=9 / 16
+                )
+                cropped_clip = clip.cropped(
+                    x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
+                )
 
             # Get dimensions from processed clip
             target_width = round_to_even(cropped_clip.w)
