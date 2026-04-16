@@ -233,7 +233,7 @@ class TaskService:
 
             from ..services.video_service import VideoService
             segments_to_render = await VideoService.translate_segment_texts(
-                segments_to_render, "th"  # HARDCODED THAI
+                segments_to_render, "ms"  # HARDCODED MALAY
             )
             logger.info(f"✅ Translation complete! First segment text: {segments_to_render[0].get('text', '')[:100] if segments_to_render else 'N/A'}")
 

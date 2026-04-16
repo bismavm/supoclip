@@ -28,6 +28,13 @@ from datetime import timedelta
 from .config import Config
 from .caption_templates import get_template, CAPTION_TEMPLATES
 from .font_registry import find_font_path
+from .smart_cropping import (
+    analyze_clip_and_decide_strategy,
+    CropStrategy,
+    apply_letterbox_blur,
+    create_stacking_layout,
+    create_blur_background,
+)
 
 logger = logging.getLogger(__name__)
 config = Config()
@@ -993,6 +1000,194 @@ def detect_optimal_crop_region(
         return (x_offset, y_offset, new_width, new_height)
 
 
+def apply_smart_crop_to_clip(
+    video_clip: VideoFileClip,
+    start_time: float,
+    end_time: float,
+    target_ratio: float = 9 / 16,
+    enable_smart_features: bool = True,
+) -> VideoFileClip:
+    """
+    Apply smart cropping with blur background, stacking, and smooth transitions.
+
+    Args:
+        video_clip: Source video clip
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        target_ratio: Target aspect ratio (width/height)
+        enable_smart_features: Enable smart cropping features (blur, stacking, etc.)
+
+    Returns:
+        Processed video clip with smart cropping applied
+    """
+    if not enable_smart_features:
+        # Fallback to original crop behavior
+        x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+            video_clip, start_time, end_time, target_ratio
+        )
+        return video_clip.cropped(
+            x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
+        )
+
+    try:
+        logger.info("Applying smart crop with person detection...")
+
+        # Analyze clip and decide strategy
+        decision = analyze_clip_and_decide_strategy(
+            video_clip, start_time, end_time, target_ratio
+        )
+
+        original_width, original_height = video_clip.size
+        target_height = original_height
+        if target_height % 2 != 0:
+            target_height += 1
+        target_width = int(target_height * target_ratio)
+        if target_width % 2 != 0:
+            target_width += 1
+
+        strategy = decision.strategy
+        logger.info(f"Using strategy: {strategy.value} for {decision.num_people} people")
+
+        # Handle WIDE_SHOT strategy (3+ people: wide shot then stacking)
+        if strategy == CropStrategy.WIDE_SHOT:
+            wide_duration = decision.metadata.get("wide_duration", 2.0)
+            clip_duration = end_time - start_time
+
+            if clip_duration > wide_duration:
+                # Split into wide shot + stacking with crossfade
+                transition_duration = 0.5  # 0.5 second crossfade
+
+                # Wide shot part (letterbox blur)
+                wide_clip = video_clip.subclipped(start_time, start_time + wide_duration)
+
+                def process_wide_frame(frame):
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
+                    return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+                wide_processed = wide_clip.fl_image(process_wide_frame)
+                wide_processed = wide_processed.with_fps(video_clip.fps)
+
+                # Stacking part
+                stack_start = start_time + wide_duration
+                stack_clip = video_clip.subclipped(stack_start, end_time)
+
+                def process_stack_frame(frame):
+                    frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                    result_bgr = create_stacking_layout(
+                        frame_bgr,
+                        decision.target_boxes,
+                        target_width,
+                        target_height,
+                        decision.metadata.get("split_ratio", 0.5)
+                    )
+                    return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+                stack_processed = stack_clip.fl_image(process_stack_frame)
+                stack_processed = stack_processed.with_fps(video_clip.fps)
+
+                # Combine with crossfade
+                from moviepy import concatenate_videoclips
+                wide_with_fade = wide_processed.with_effects([CrossFadeOut(transition_duration)])
+                stack_with_fade = stack_processed.with_effects([CrossFadeIn(transition_duration)])
+
+                final_clip = concatenate_videoclips(
+                    [wide_with_fade, stack_with_fade],
+                    method="compose"
+                )
+
+                logger.info(
+                    f"Created wide shot ({wide_duration}s) + stacking "
+                    f"({clip_duration - wide_duration:.1f}s) with {transition_duration}s transition"
+                )
+                return final_clip
+            else:
+                # Clip too short, just use letterbox
+                strategy = CropStrategy.LETTERBOX_BLUR
+
+        # Apply the appropriate strategy
+        if strategy == CropStrategy.TRACK:
+            # Traditional tracking: crop to the target box
+            if decision.target_boxes:
+                target_box = decision.target_boxes[0]
+                x1, y1, x2, y2 = target_box
+
+                # Calculate crop box centered on target
+                box_center_x = (x1 + x2) // 2
+                box_center_y = (y1 + y2) // 2
+
+                crop_x = max(0, min(box_center_x - target_width // 2, original_width - target_width))
+                crop_y = max(0, min(box_center_y - target_height // 2, original_height - target_height))
+
+                # Ensure even offsets
+                crop_x = round_to_even(crop_x)
+                crop_y = round_to_even(crop_y)
+
+                logger.info(f"Tracking crop at ({crop_x}, {crop_y})")
+                return video_clip.cropped(
+                    x1=crop_x, y1=crop_y,
+                    x2=crop_x + target_width, y2=crop_y + target_height
+                )
+            else:
+                # No target, fallback to center crop
+                crop_x = (original_width - target_width) // 2
+                crop_y = (original_height - target_height) // 2
+                return video_clip.cropped(
+                    x1=crop_x, y1=crop_y,
+                    x2=crop_x + target_width, y2=crop_y + target_height
+                )
+
+        elif strategy == CropStrategy.LETTERBOX_BLUR:
+            # Apply blur background letterbox frame-by-frame
+            def process_frame(frame):
+                # Convert RGB (MoviePy) to BGR (OpenCV)
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
+                # Convert back to RGB
+                return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+            logger.info("Applying letterbox with blur background")
+            processed = video_clip.fl_image(process_frame)
+            return processed.with_fps(video_clip.fps)
+
+        elif strategy == CropStrategy.STACKING:
+            # Apply stacking layout frame-by-frame
+            def process_frame(frame):
+                frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                result_bgr = create_stacking_layout(
+                    frame_bgr,
+                    decision.target_boxes,
+                    target_width,
+                    target_height,
+                    decision.metadata.get("split_ratio", 0.5)
+                )
+                return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
+
+            logger.info(f"Applying stacking layout (50:50 split)")
+            processed = video_clip.fl_image(process_frame)
+            return processed.with_fps(video_clip.fps)
+
+        else:
+            # Unknown strategy, fallback to center crop
+            logger.warning(f"Unknown strategy {strategy}, using center crop")
+            crop_x = (original_width - target_width) // 2
+            crop_y = (original_height - target_height) // 2
+            return video_clip.cropped(
+                x1=crop_x, y1=crop_y,
+                x2=crop_x + target_width, y2=crop_y + target_height
+            )
+
+    except Exception as e:
+        logger.error(f"Smart crop failed: {e}, falling back to standard crop")
+        # Fallback to original behavior
+        x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+            video_clip, start_time, end_time, target_ratio
+        )
+        return video_clip.cropped(
+            x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
+        )
+
+
 def detect_faces_in_clip(
     video_clip: VideoFileClip, start_time: float, end_time: float
 ) -> List[Tuple[int, int, int, float]]:
@@ -1811,14 +2006,16 @@ def create_optimized_clip(
                 processed_clip = processed_clip.resized((target_width, target_height))
             cropped_clip = None
         else:
-            # Vertical 9:16: face-centered crop, preserve native resolution
-            x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
-                video, start_time, end_time, target_ratio=9 / 16
+            # Vertical 9:16: apply smart cropping with person detection
+            # Features: blur background, stacking, smooth transitions
+            enable_smart = config.enable_smart_cropping
+            cropped_clip = apply_smart_crop_to_clip(
+                video, start_time, end_time, target_ratio=9 / 16, enable_smart_features=enable_smart
             )
-            cropped_clip = clip.cropped(
-                x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
-            )
-            target_width, target_height = round_to_even(new_width), round_to_even(new_height)
+
+            # Get dimensions from processed clip
+            target_width = round_to_even(cropped_clip.w)
+            target_height = round_to_even(cropped_clip.h)
             processed_clip = cropped_clip
 
         # Add AssemblyAI subtitles with template support

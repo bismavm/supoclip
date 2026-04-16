@@ -56,8 +56,8 @@ class VideoService:
     """Service for video processing operations."""
 
     @staticmethod
-    def translate_text_sync(text: str, target_language: str = "th") -> str:
-        """HARDCODED: Translate to Thai using Gemini REST API."""
+    def translate_text_sync(text: str, target_language: str = "ms") -> str:
+        """HARDCODED: Translate to Malay using Gemini REST API."""
         import requests
 
         logger.info(f"🔄 translate_text_sync called: {text[:50]}...")
@@ -66,15 +66,15 @@ class VideoService:
             logger.error("❌ NO GOOGLE_API_KEY!")
             return text
 
-        logger.info(f"✅ API key found, translating to Thai...")
+        logger.info(f"✅ API key found, translating to Malay...")
 
-        prompt = f"""Translate this text to Thai (ภาษาไทย). Use Thai script.
+        prompt = f"""Translate this text to Malay (Bahasa Melayu). Use Malay language.
 
 Text: {text}
 
 RULES:
-- Output ONLY Thai text (ภาษาไทย)
-- Use Thai characters
+- Output ONLY Malay text (Bahasa Melayu)
+- Use proper Malay spelling and grammar
 - NO English, NO explanations"""
 
         try:

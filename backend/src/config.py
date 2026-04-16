@@ -28,8 +28,8 @@ class Config:
         self.transcription_provider = self._normalize_transcription_provider(
             os.getenv("TRANSCRIPTION_PROVIDER", "google_genai")
         )
-        # HARDCODED: Always Thai
-        self.transcription_language = "th"  # HARDCODED THAI
+        # HARDCODED: Always Malay (Malaysia)
+        self.transcription_language = "ms"  # HARDCODED MALAY
         self.gemini_transcription_model = (
             self._get_optional_env("GEMINI_TRANSCRIPTION_MODEL")
             or "gemini-3-flash-preview"
@@ -90,6 +90,9 @@ class Config:
         self.fast_mode_transcript_model = os.getenv(
             "FAST_MODE_TRANSCRIPT_MODEL", "nano"
         )
+
+        # Smart cropping features (blur background, stacking, transitions)
+        self.enable_smart_cropping = self._get_bool_env("ENABLE_SMART_CROPPING", True)
 
     @staticmethod
     def _get_optional_env(name: str):
