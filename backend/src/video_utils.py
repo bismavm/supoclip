@@ -623,6 +623,9 @@ def _get_video_transcript_assemblyai(video_path: Path, speech_model: str = "best
     if not audio_url:
         raise RuntimeError("AssemblyAI upload did not return upload_url")
 
+    # Use configured transcription language
+    target_language = config.transcription_language
+
     transcript_payload = {
         "audio_url": audio_url,
         "speaker_labels": True,
@@ -631,8 +634,28 @@ def _get_video_transcript_assemblyai(video_path: Path, speech_model: str = "best
         "speech_models": ["universal-2"],
     }
 
-    # Let AssemblyAI auto-detect language, we'll translate later
-    logger.info(f"🌐 Using auto-detect (will translate to Thai after)")
+    # Set language code if not auto
+    if target_language and target_language != "auto":
+        # AssemblyAI uses specific language codes
+        # Map our codes to AssemblyAI codes
+        language_map = {
+            "ms": "ms",  # Malay
+            "id": "id",  # Indonesian
+            "en": "en",  # English
+            "th": "th",  # Thai
+            "ja": "ja",  # Japanese
+            "ko": "ko",  # Korean
+            "zh": "zh",  # Chinese
+            "es": "es",  # Spanish
+            "fr": "fr",  # French
+            "de": "de",  # German
+        }
+
+        aai_language = language_map.get(target_language, target_language)
+        transcript_payload["language_code"] = aai_language
+        logger.info(f"🌐 AssemblyAI transcription language set to: {aai_language} (Malay)")
+    else:
+        logger.info(f"🌐 Using auto-detect language")
     create_response = requests.post(
         "https://api.assemblyai.com/v2/transcript",
         headers={**headers, "content-type": "application/json"},
@@ -1290,9 +1313,9 @@ def apply_smart_crop_with_ffmpeg(
             logger.error("No scenes were processed successfully")
             return False
 
-        # Extract original audio
+        # Extract original audio with exact time range
         audio_file = temp_dir / f"audio_{os.getpid()}.aac"
-        extract_audio_ffmpeg(video_path, audio_file)
+        extract_audio_ffmpeg(video_path, audio_file, start_time, end_time)
 
         # Concatenate all scenes
         success = concat_scenes_with_ffmpeg(

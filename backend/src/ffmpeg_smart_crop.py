@@ -282,26 +282,43 @@ def concat_scenes_with_ffmpeg(
         return False
 
 
-def extract_audio_ffmpeg(input_video: Path, output_audio: Path) -> bool:
+def extract_audio_ffmpeg(
+    input_video: Path,
+    output_audio: Path,
+    start_time: Optional[float] = None,
+    end_time: Optional[float] = None
+) -> bool:
     """
-    Extract audio from video using FFmpeg.
+    Extract audio from video using FFmpeg with optional time range.
 
     Args:
         input_video: Input video file
         output_audio: Output audio file (AAC)
+        start_time: Optional start time in seconds
+        end_time: Optional end time in seconds
 
     Returns:
         True if successful
     """
     try:
-        cmd = [
-            "ffmpeg", "-y",
-            "-i", str(input_video),
+        cmd = ["ffmpeg", "-y"]
+
+        # Add time range if specified
+        if start_time is not None:
+            cmd.extend(["-ss", str(start_time)])
+
+        cmd.extend(["-i", str(input_video)])
+
+        if end_time is not None and start_time is not None:
+            duration = end_time - start_time
+            cmd.extend(["-t", str(duration)])
+
+        cmd.extend([
             "-vn",  # No video
             "-c:a", "aac",
             "-b:a", "192k",
             str(output_audio)
-        ]
+        ])
 
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
 
@@ -309,7 +326,7 @@ def extract_audio_ffmpeg(input_video: Path, output_audio: Path) -> bool:
             logger.error(f"FFmpeg audio extraction failed: {result.stderr}")
             return False
 
-        logger.info(f"Audio extracted: {output_audio}")
+        logger.info(f"Audio extracted: {output_audio} ({start_time or 0:.1f}s - {end_time or 'end'}s)")
         return True
 
     except Exception as e:
