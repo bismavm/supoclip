@@ -36,6 +36,12 @@ from .smart_cropping import (
     create_stacking_layout,
     create_blur_background,
 )
+from .ffmpeg_smart_crop import (
+    generate_crop_filter,
+    process_scene_with_ffmpeg,
+    concat_scenes_with_ffmpeg,
+    extract_audio_ffmpeg,
+)
 
 logger = logging.getLogger(__name__)
 config = Config()
@@ -1061,19 +1067,21 @@ def apply_smart_crop_to_clip(
                 # Wide shot part (letterbox blur)
                 wide_clip = video_clip.subclipped(start_time, start_time + wide_duration)
 
-                def process_wide_frame(frame):
+                def process_wide_frame(get_frame, t):
+                    frame = get_frame(t)
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
                     return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
-                wide_processed = wide_clip.fl_image(process_wide_frame)
+                wide_processed = wide_clip.fl(process_wide_frame)
                 wide_processed = wide_processed.with_fps(video_clip.fps)
 
                 # Stacking part
                 stack_start = start_time + wide_duration
                 stack_clip = video_clip.subclipped(stack_start, end_time)
 
-                def process_stack_frame(frame):
+                def process_stack_frame(get_frame, t):
+                    frame = get_frame(t)
                     frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                     result_bgr = create_stacking_layout(
                         frame_bgr,
@@ -1084,7 +1092,7 @@ def apply_smart_crop_to_clip(
                     )
                     return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
-                stack_processed = stack_clip.fl_image(process_stack_frame)
+                stack_processed = stack_clip.fl(process_stack_frame)
                 stack_processed = stack_processed.with_fps(video_clip.fps)
 
                 # Combine with crossfade
@@ -1140,7 +1148,9 @@ def apply_smart_crop_to_clip(
 
         elif strategy == CropStrategy.LETTERBOX_BLUR:
             # Apply blur background letterbox frame-by-frame
-            def process_frame(frame):
+            def process_frame(get_frame, t):
+                # Get frame at time t
+                frame = get_frame(t)
                 # Convert RGB (MoviePy) to BGR (OpenCV)
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
@@ -1148,12 +1158,13 @@ def apply_smart_crop_to_clip(
                 return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
             logger.info("Applying letterbox with blur background")
-            processed = video_clip.fl_image(process_frame)
+            processed = video_clip.fl(process_frame)
             return processed.with_fps(video_clip.fps)
 
         elif strategy == CropStrategy.STACKING:
             # Apply stacking layout frame-by-frame
-            def process_frame(frame):
+            def process_frame(get_frame, t):
+                frame = get_frame(t)
                 frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
                 result_bgr = create_stacking_layout(
                     frame_bgr,
@@ -1165,7 +1176,7 @@ def apply_smart_crop_to_clip(
                 return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
             logger.info(f"Applying stacking layout (50:50 split)")
-            processed = video_clip.fl_image(process_frame)
+            processed = video_clip.fl(process_frame)
             return processed.with_fps(video_clip.fps)
 
         else:
@@ -1187,6 +1198,128 @@ def apply_smart_crop_to_clip(
         return video_clip.cropped(
             x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
         )
+
+
+def apply_smart_crop_with_ffmpeg(
+    video_path: Path,
+    output_path: Path,
+    start_time: float,
+    end_time: float,
+    target_ratio: float = 9 / 16,
+    enable_scene_detection: bool = True,
+) -> bool:
+    """
+    Apply smart cropping using FFmpeg for better performance.
+
+    This is much faster than MoviePy frame-by-frame processing!
+
+    Args:
+        video_path: Input video file
+        output_path: Output video file
+        start_time: Start time in seconds
+        end_time: End time in seconds
+        target_ratio: Target aspect ratio
+        enable_scene_detection: Enable scene detection
+
+    Returns:
+        True if successful
+    """
+    import tempfile
+
+    try:
+        logger.info(f"FFmpeg-based smart crop: {start_time:.1f}s - {end_time:.1f}s")
+
+        # Load video to analyze
+        video_clip = VideoFileClip(str(video_path))
+        original_width, original_height = video_clip.size
+
+        # Calculate target dimensions
+        target_height = original_height
+        if target_height % 2 != 0:
+            target_height += 1
+        target_width = int(target_height * target_ratio)
+        if target_width % 2 != 0:
+            target_width += 1
+
+        # Analyze clip and get strategies per scene
+        scene_decisions = analyze_clip_with_scene_detection(
+            video_clip, start_time, end_time, target_ratio, enable_scene_detection
+        )
+
+        video_clip.close()
+
+        logger.info(f"Processing {len(scene_decisions)} scenes with FFmpeg")
+
+        # Process each scene with FFmpeg
+        scene_files = []
+        temp_dir = Path(tempfile.gettempdir())
+
+        for idx, (scene_start, scene_end, decision) in enumerate(scene_decisions):
+            scene_file = temp_dir / f"scene_{idx}_{os.getpid()}.mp4"
+
+            # Generate FFmpeg filter based on strategy
+            strategy_name = decision.strategy.value
+            filter_str = generate_crop_filter(
+                strategy_name,
+                decision.target_boxes,
+                original_width,
+                original_height,
+                target_width,
+                target_height
+            )
+
+            logger.info(f"Scene {idx}: {scene_start:.1f}s-{scene_end:.1f}s strategy={strategy_name}")
+
+            # Process scene with FFmpeg
+            success = process_scene_with_ffmpeg(
+                video_path,
+                scene_file,
+                scene_start,
+                scene_end,
+                filter_str,
+                target_width,
+                target_height
+            )
+
+            if success and scene_file.exists():
+                scene_files.append(scene_file)
+            else:
+                logger.warning(f"Scene {idx} processing failed, skipping")
+
+        if not scene_files:
+            logger.error("No scenes were processed successfully")
+            return False
+
+        # Extract original audio
+        audio_file = temp_dir / f"audio_{os.getpid()}.aac"
+        extract_audio_ffmpeg(video_path, audio_file)
+
+        # Concatenate all scenes
+        success = concat_scenes_with_ffmpeg(
+            scene_files,
+            output_path,
+            audio_file if audio_file.exists() else None
+        )
+
+        # Cleanup temp files
+        for scene_file in scene_files:
+            try:
+                scene_file.unlink()
+            except:
+                pass
+        if audio_file.exists():
+            try:
+                audio_file.unlink()
+            except:
+                pass
+
+        return success
+
+    except Exception as e:
+        logger.error(f"FFmpeg smart crop failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
 
 
 def apply_smart_crop_with_scenes(
@@ -1322,16 +1455,18 @@ def _process_scene_with_strategy(
 
     elif strategy == CropStrategy.LETTERBOX_BLUR:
         # Apply blur background frame-by-frame
-        def process_frame(frame):
+        def process_frame(get_frame, t):
+            frame = get_frame(t)
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             result_bgr = apply_letterbox_blur(frame_bgr, target_width, target_height)
             return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
-        return scene_clip.fl_image(process_frame).with_fps(scene_clip.fps)
+        return scene_clip.fl(process_frame).with_fps(scene_clip.fps)
 
     elif strategy == CropStrategy.STACKING:
         # Apply stacking layout frame-by-frame
-        def process_frame(frame):
+        def process_frame(get_frame, t):
+            frame = get_frame(t)
             frame_bgr = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             result_bgr = create_stacking_layout(
                 frame_bgr,
@@ -1342,7 +1477,7 @@ def _process_scene_with_strategy(
             )
             return cv2.cvtColor(result_bgr, cv2.COLOR_BGR2RGB)
 
-        return scene_clip.fl_image(process_frame).with_fps(scene_clip.fps)
+        return scene_clip.fl(process_frame).with_fps(scene_clip.fps)
 
     else:
         # Fallback: center crop
@@ -2177,11 +2312,51 @@ def create_optimized_clip(
             enable_smart = config.enable_smart_cropping
 
             if enable_smart:
-                # Use scene-based smart cropping (can change strategy per scene)
+                # Use FFmpeg-based smart cropping (MUCH FASTER!)
+                import tempfile
                 enable_scenes = config.enable_scene_detection
-                cropped_clip = apply_smart_crop_with_scenes(
-                    video, start_time, end_time, target_ratio=9 / 16, enable_scene_detection=enable_scenes
+
+                # Create temp file for FFmpeg output
+                temp_cropped = Path(tempfile.gettempdir()) / f"smart_crop_{os.getpid()}.mp4"
+
+                logger.info("Using FFmpeg-based smart cropping (fast!)")
+
+                # Process with FFmpeg
+                success = apply_smart_crop_with_ffmpeg(
+                    video_path,
+                    temp_cropped,
+                    start_time,
+                    end_time,
+                    target_ratio=9 / 16,
+                    enable_scene_detection=enable_scenes
                 )
+
+                video.close()  # Close original video
+
+                if success and temp_cropped.exists():
+                    # Load FFmpeg output
+                    cropped_clip = VideoFileClip(str(temp_cropped))
+                    target_width = round_to_even(cropped_clip.w)
+                    target_height = round_to_even(cropped_clip.h)
+                    processed_clip = cropped_clip
+
+                    # Note: temp file will be cleaned up after processing
+                    logger.info(f"FFmpeg smart crop successful: {target_width}x{target_height}")
+                else:
+                    logger.error("FFmpeg smart crop failed, falling back to standard crop")
+                    # Reload video and use standard crop
+                    video = VideoFileClip(str(video_path))
+                    clip = video.subclipped(start_time, end_time)
+                    x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
+                        video, start_time, end_time, target_ratio=9 / 16
+                    )
+                    cropped_clip = clip.cropped(
+                        x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
+                    )
+                    target_width = round_to_even(new_width)
+                    target_height = round_to_even(new_height)
+                    processed_clip = cropped_clip
+
             else:
                 # Fallback to simple crop
                 x_offset, y_offset, new_width, new_height = detect_optimal_crop_region(
@@ -2190,11 +2365,9 @@ def create_optimized_clip(
                 cropped_clip = clip.cropped(
                     x1=x_offset, y1=y_offset, x2=x_offset + new_width, y2=y_offset + new_height
                 )
-
-            # Get dimensions from processed clip
-            target_width = round_to_even(cropped_clip.w)
-            target_height = round_to_even(cropped_clip.h)
-            processed_clip = cropped_clip
+                target_width = round_to_even(new_width)
+                target_height = round_to_even(new_height)
+                processed_clip = cropped_clip
 
         # Add AssemblyAI subtitles with template support
         final_clips = [processed_clip]
@@ -2238,14 +2411,34 @@ def create_optimized_clip(
             processed_clip.close()
         if cropped_clip is not None:
             cropped_clip.close()
-        clip.close()
-        video.close()
+        try:
+            clip.close()
+        except:
+            pass
+        try:
+            video.close()
+        except:
+            pass
+
+        # Cleanup temp FFmpeg file
+        if 'temp_cropped' in locals() and temp_cropped.exists():
+            try:
+                temp_cropped.unlink()
+                logger.info("Cleaned up temp FFmpeg file")
+            except Exception as e:
+                logger.warning(f"Failed to clean up temp file: {e}")
 
         logger.info(f"Successfully created clip: {output_path}")
         return True
 
     except Exception as e:
         logger.error(f"Failed to create clip: {e}")
+        # Cleanup temp file on error
+        if 'temp_cropped' in locals():
+            try:
+                Path(temp_cropped).unlink()
+            except:
+                pass
         return False
 
 
