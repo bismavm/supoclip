@@ -272,47 +272,14 @@ def decide_crop_strategy(
             metadata={"split_ratio": 0.5}  # 50:50 split
         )
 
-    # 3+ people → check if group fits, otherwise wide shot then stacking
-    person_boxes = [d.person_box for d in detections]
-    group_box = _get_enclosing_box(person_boxes)
-    group_width = group_box[2] - group_box[0]
-
-    if group_width <= max_width_for_crop:
-        # Group fits in crop → track the group
-        logger.info(f"Strategy: TRACK (group of {num_people} people fits)")
-        return CropDecision(
-            strategy=CropStrategy.TRACK,
-            target_boxes=[group_box],
-            num_people=num_people,
-            metadata={"tracking": "group"}
-        )
-    else:
-        # Group too wide → show wide shot first, then stacking
-        # Pick 2 people with largest faces for stacking
-        sorted_detections = sorted(
-            detections,
-            key=lambda d: (d.face_box[2] - d.face_box[0]) * (d.face_box[3] - d.face_box[1])
-                         if d.face_box else d.area,
-            reverse=True
-        )
-
-        main_subjects = [
-            d.face_box if d.face_box else d.person_box
-            for d in sorted_detections[:2]
-        ]
-
-        logger.info(f"Strategy: WIDE_SHOT → STACKING ({num_people} people, group too wide)")
-        return CropDecision(
-            strategy=CropStrategy.WIDE_SHOT,
-            target_boxes=main_subjects,
-            num_people=num_people,
-            metadata={
-                "transition_to": CropStrategy.STACKING,
-                "wide_duration": wide_shot_threshold,
-                "split_ratio": 0.5,
-                "group_box": group_box
-            }
-        )
+    # 3+ people → wide shot with blur background
+    logger.info(f"Strategy: LETTERBOX_BLUR ({num_people} people, wide shot)")
+    return CropDecision(
+        strategy=CropStrategy.LETTERBOX_BLUR,
+        target_boxes=[],
+        num_people=num_people,
+        metadata={"reason": "wide_shot_multiple_people"}
+    )
 
 
 def _get_enclosing_box(boxes: List[Tuple[int, int, int, int]]) -> Tuple[int, int, int, int]:
