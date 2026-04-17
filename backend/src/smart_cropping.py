@@ -98,6 +98,10 @@ def detect_people_in_frame(frame: np.ndarray) -> List[PersonDetection]:
         # Run YOLO detection
         results = model([frame], verbose=False)
 
+        frame_height, frame_width = frame.shape[:2]
+        min_person_area = (frame_width * frame_height) * 0.01  # Minimum 1% of frame
+        min_confidence = 0.5  # Minimum confidence threshold
+
         for result in results:
             boxes = result.boxes
             for box in boxes:
@@ -107,19 +111,41 @@ def detect_people_in_frame(frame: np.ndarray) -> List[PersonDetection]:
                     person_box = (x1, y1, x2, y2)
                     confidence = float(box.conf[0])
 
+                    # Filter 1: Confidence threshold (reject low confidence)
+                    if confidence < min_confidence:
+                        logger.debug(f"Skipping low confidence detection: {confidence:.2f}")
+                        continue
+
+                    width = x2 - x1
+                    height = y2 - y1
+                    area = width * height
+
+                    # Filter 2: Minimum size (reject small detections like posters)
+                    if area < min_person_area:
+                        logger.debug(f"Skipping small detection: {area} < {min_person_area:.0f}")
+                        continue
+
+                    # Filter 3: Aspect ratio (real people have height > width)
+                    aspect_ratio = height / width if width > 0 else 0
+                    if aspect_ratio < 0.8 or aspect_ratio > 5.0:  # Reject weird proportions
+                        logger.debug(f"Skipping weird aspect ratio: {aspect_ratio:.2f}")
+                        continue
+
                     # Try to detect face within person bounding box
                     face_box = _detect_face_in_roi(frame, x1, y1, x2, y2)
 
-                    area = (x2 - x1) * (y2 - y1)
+                    # Filter 4: Prefer detections with faces (real people have faces)
+                    # We still accept no-face detections but lower their priority
+                    effective_confidence = confidence if face_box else confidence * 0.7
 
                     detections.append(PersonDetection(
                         person_box=person_box,
                         face_box=face_box,
-                        confidence=confidence,
+                        confidence=effective_confidence,
                         area=area
                     ))
 
-        logger.info(f"Detected {len(detections)} people in frame")
+        logger.info(f"Detected {len(detections)} people in frame (filtered from {len(boxes) if boxes else 0})")
         return detections
 
     except Exception as e:
@@ -141,17 +167,26 @@ def _detect_face_in_roi(
         person_roi = frame[y1:y2, x1:x2]
         gray = cv2.cvtColor(person_roi, cv2.COLOR_BGR2GRAY)
 
-        # Detect faces
+        # Detect faces with stricter parameters to avoid false positives
         faces = cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(30, 30)
+            minNeighbors=7,  # Increased from 5 (stricter, less false positives)
+            minSize=(50, 50),  # Increased from (30, 30) - larger minimum face size
+            flags=cv2.CASCADE_SCALE_IMAGE
         )
 
         if len(faces) > 0:
             # Return largest face (converted to absolute coordinates)
             fx, fy, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+
+            # Additional validation: face should be in upper portion of person box
+            person_height = y2 - y1
+            face_center_y = fy + fh // 2
+            if face_center_y > person_height * 0.7:  # Face too low (probably not real)
+                logger.debug(f"Face position too low in person box, rejecting")
+                return None
+
             return (x1 + fx, y1 + fy, x1 + fx + fw, y1 + fy + fh)
 
     except Exception as e:
@@ -168,15 +203,27 @@ def _fallback_face_detection(frame: np.ndarray) -> List[PersonDetection]:
 
     try:
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        frame_height, frame_width = frame.shape[:2]
+        min_face_area = (frame_width * frame_height) * 0.005  # Minimum 0.5% of frame
+
+        # Stricter parameters to reduce false positives
         faces = cascade.detectMultiScale(
             gray,
             scaleFactor=1.1,
-            minNeighbors=5,
-            minSize=(50, 50)
+            minNeighbors=7,  # Increased from 5 for fewer false positives
+            minSize=(60, 60),  # Increased from (50, 50)
+            flags=cv2.CASCADE_SCALE_IMAGE
         )
 
         detections = []
         for (x, y, w, h) in faces:
+            face_area = w * h
+
+            # Filter out small detections (likely false positives)
+            if face_area < min_face_area:
+                logger.debug(f"Skipping small face detection: {face_area} < {min_face_area:.0f}")
+                continue
+
             face_box = (x, y, x + w, y + h)
             # Estimate person box as 3x height, 1.5x width centered on face
             person_h = h * 3
@@ -194,6 +241,7 @@ def _fallback_face_detection(frame: np.ndarray) -> List[PersonDetection]:
                 area=area
             ))
 
+        logger.info(f"Fallback detected {len(detections)} faces (filtered from {len(faces)})")
         return detections
 
     except Exception as e:
