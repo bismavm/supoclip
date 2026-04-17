@@ -908,10 +908,14 @@ def get_safe_vertical_position(
 ) -> int:
     """Return subtitle y position clamped inside a top/bottom safe area."""
     min_top_padding = max(40, int(video_height * 0.05))
-    min_bottom_padding = max(120, int(video_height * 0.10))
+    # Increased bottom padding to prevent text cutoff (especially descenders like g, y, p, q)
+    min_bottom_padding = max(150, int(video_height * 0.12))
+
+    # Add extra padding for descenders (20% of text height)
+    descender_padding = int(text_height * 0.2)
 
     desired_y = int(video_height * position_y - text_height // 2)
-    max_y = video_height - min_bottom_padding - text_height
+    max_y = video_height - min_bottom_padding - text_height - descender_padding
     return max(min_top_padding, min(desired_y, max_y))
 
 
@@ -1939,7 +1943,7 @@ def create_static_subtitles(
                     method="caption",
                     size=(max_text_width, None),
                     text_align="center",
-                    interline=6,
+                    interline=10,  # Increased from 6 to prevent text cutoff
                 )
                 .with_duration(segment_duration)
                 .with_start(segment_start)
@@ -2132,7 +2136,7 @@ def create_pop_subtitles(
                     method="caption",
                     size=(max_text_width, None),
                     text_align="center",
-                    interline=6,
+                    interline=10,  # Increased from 6 to prevent text cutoff
                 )
                 .with_duration(group_duration)
                 .with_start(group_start)
@@ -2202,7 +2206,7 @@ def create_fade_subtitles(
                 method="caption",
                 size=(max_text_width, None),
                 text_align="center",
-                interline=6,
+                interline=10,  # Increased from 6 to prevent text cutoff
             )
 
             text_height = text_clip.size[1] if text_clip.size else 40
@@ -2213,7 +2217,7 @@ def create_fade_subtitles(
 
             # Add background if specified
             if has_background and background_color:
-                padding = 10
+                padding = 15  # Increased from 10 for better spacing
                 # Parse background color (handle alpha)
                 bg_color_hex = (
                     background_color[:7]
@@ -2221,9 +2225,12 @@ def create_fade_subtitles(
                     else background_color
                 )
 
+                # Add extra vertical padding for descenders
+                vertical_padding = padding + int(text_height * 0.15)
+
                 bg_clip = (
                     ColorClip(
-                        size=(text_width + padding * 2, text_height + padding),
+                        size=(text_width + padding * 2, text_height + vertical_padding),
                         color=tuple(
                             int(bg_color_hex[i : i + 2], 16) for i in (1, 3, 5)
                         ),
@@ -2233,7 +2240,7 @@ def create_fade_subtitles(
                 )
 
                 bg_clip = bg_clip.with_position(
-                    ("center", vertical_position - padding // 2)
+                    ("center", vertical_position - vertical_padding // 2)
                 )
 
                 # Apply fade to background
