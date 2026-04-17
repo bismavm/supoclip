@@ -42,7 +42,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "name": "MrBeast",
         "description": "Large yellow text with red highlights",
         "font_family": "THEBOLDFONT",
-        "font_size": 30,
+        "font_size": 25,
         "font_color": "#FFFF00",  # Yellow
         "highlight_color": "#FF0000",  # Red
         "stroke_color": "#000000",

@@ -1282,7 +1282,12 @@ def apply_smart_crop_with_ffmpeg(
             for _, _, decision in scene_decisions
         )
 
-        logger.info(f"Processing {len(scene_decisions)} scenes with FFmpeg (has_stacking={has_stacking})")
+        # Debug: show all strategies
+        strategies = [decision.strategy.value for _, _, decision in scene_decisions]
+        logger.info(
+            f"🎬 Processing {len(scene_decisions)} scenes with FFmpeg: "
+            f"strategies={strategies}, has_stacking={has_stacking}"
+        )
 
         # Process each scene with FFmpeg
         scene_files = []
@@ -1852,8 +1857,8 @@ def create_assemblyai_subtitles(
     effective_font_color = font_color or template["font_color"]
 
     # Adjust position based on stacking mode
-    # Stacking: caption di tengah (0.50), Non-stacking: caption di bawah (0.80)
-    position_y = 0.50 if is_stacking else 0.80
+    # Stacking: caption di tengah (0.50), Non-stacking: caption di bawah (0.85)
+    position_y = 0.50 if is_stacking else 0.85
 
     effective_template = {
         **template,
@@ -1864,8 +1869,8 @@ def create_assemblyai_subtitles(
     }
 
     logger.info(
-        f"Creating subtitles with template '{caption_template}', animation: {animation_type}, "
-        f"position: {'middle' if is_stacking else 'bottom'} (stacking={is_stacking})"
+        f"📍 SUBTITLE POSITION: is_stacking={is_stacking}, position_y={position_y} "
+        f"(template='{caption_template}', animation={animation_type})"
     )
 
     # Get words in range
@@ -1927,6 +1932,8 @@ def create_static_subtitles(
     calculated_font_size = get_scaled_font_size(template["font_size"], video_width)
     position_y = template.get("position_y", 0.75)
     max_text_width = get_subtitle_max_width(video_width)
+
+    logger.info(f"📝 create_static_subtitles: position_y={position_y}")
 
     words_per_subtitle = 3
     for i in range(0, len(relevant_words), words_per_subtitle):
@@ -1999,6 +2006,8 @@ def create_karaoke_subtitles(
     normal_color = template["font_color"]
     max_text_width = get_subtitle_max_width(video_width)
     horizontal_padding = max(40, int(video_width * 0.06))
+
+    logger.info(f"📝 create_karaoke_subtitles: position_y={position_y}")
 
     words_per_group = 3
 
@@ -2122,6 +2131,8 @@ def create_pop_subtitles(
     position_y = template.get("position_y", 0.75)
     max_text_width = get_subtitle_max_width(video_width)
 
+    logger.info(f"📝 create_pop_subtitles: position_y={position_y}")
+
     words_per_group = 3
 
     for group_idx in range(0, len(relevant_words), words_per_group):
@@ -2191,6 +2202,8 @@ def create_fade_subtitles(
     has_background = template.get("background", False)
     background_color = template.get("background_color", "#00000080")
     max_text_width = get_subtitle_max_width(video_width)
+
+    logger.info(f"📝 create_fade_subtitles: position_y={position_y}")
 
     words_per_group = 4
 
@@ -2422,6 +2435,7 @@ def create_optimized_clip(
         final_clips = [processed_clip]
 
         if add_subtitles:
+            logger.info(f"🎬 Adding subtitles with has_stacking={has_stacking}")
             subtitle_clips = create_assemblyai_subtitles(
                 video_path,
                 start_time,
