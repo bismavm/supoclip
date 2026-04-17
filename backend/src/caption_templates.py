@@ -21,7 +21,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "none",
         "shadow": False,
-        "position_y": 0.75,  # 75% down the video
+        "position_y": 0.72,  # Moved up from 75% to avoid cutoff
     },
     "hormozi": {
         "name": "Hormozi",
@@ -36,7 +36,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": "#000000AA",  # Semi-transparent black
         "animation": "karaoke",
         "shadow": True,
-        "position_y": 0.75,
+        "position_y": 0.72,  # Moved up to avoid cutoff
     },
     "mrbeast": {
         "name": "MrBeast",
@@ -66,7 +66,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": "#00000080",  # 50% transparent black
         "animation": "fade",
         "shadow": False,
-        "position_y": 0.80,
+        "position_y": 0.72,  # Moved up from 0.80 to avoid cutoff
     },
     "tiktok": {
         "name": "TikTok",
@@ -81,7 +81,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "karaoke",
         "shadow": True,
-        "position_y": 0.75,
+        "position_y": 0.72,  # Moved up to avoid cutoff
     },
     "neon": {
         "name": "Neon",
@@ -96,7 +96,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": None,
         "animation": "karaoke",
         "shadow": True,
-        "position_y": 0.75,
+        "position_y": 0.72,  # Moved up to avoid cutoff
     },
     "podcast": {
         "name": "Podcast",
@@ -111,7 +111,7 @@ CAPTION_TEMPLATES: Dict[str, Dict[str, Any]] = {
         "background_color": "#1A1A1ACC",  # Dark semi-transparent
         "animation": "fade",
         "shadow": False,
-        "position_y": 0.78,
+        "position_y": 0.72,  # Moved up from 0.78 to avoid cutoff
     },
 }
 

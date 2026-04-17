@@ -100,7 +100,7 @@ def detect_people_in_frame(frame: np.ndarray) -> List[PersonDetection]:
 
         frame_height, frame_width = frame.shape[:2]
         min_person_area = (frame_width * frame_height) * 0.01  # Minimum 1% of frame
-        min_confidence = 0.5  # Minimum confidence threshold
+        min_confidence = 0.7  # Minimum confidence threshold
 
         for result in results:
             boxes = result.boxes
