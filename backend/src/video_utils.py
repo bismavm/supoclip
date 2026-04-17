@@ -1235,7 +1235,7 @@ def apply_smart_crop_with_ffmpeg(
     end_time: float,
     target_ratio: float = 9 / 16,
     enable_scene_detection: bool = True,
-) -> bool:
+) -> tuple[bool, bool]:
     """
     Apply smart cropping using FFmpeg for better performance.
 
@@ -1250,7 +1250,7 @@ def apply_smart_crop_with_ffmpeg(
         enable_scene_detection: Enable scene detection
 
     Returns:
-        True if successful
+        Tuple of (success, has_stacking) - whether stacking strategy was used
     """
     import tempfile
 
@@ -1276,7 +1276,13 @@ def apply_smart_crop_with_ffmpeg(
 
         video_clip.close()
 
-        logger.info(f"Processing {len(scene_decisions)} scenes with FFmpeg")
+        # Check if any scene uses stacking strategy
+        has_stacking = any(
+            decision.strategy.value == "stacking"
+            for _, _, decision in scene_decisions
+        )
+
+        logger.info(f"Processing {len(scene_decisions)} scenes with FFmpeg (has_stacking={has_stacking})")
 
         # Process each scene with FFmpeg
         scene_files = []
@@ -1319,7 +1325,7 @@ def apply_smart_crop_with_ffmpeg(
 
         if not scene_files:
             logger.error("No scenes were processed successfully")
-            return False
+            return (False, False)
 
         # Extract original audio with exact time range
         audio_file = temp_dir / f"audio_{os.getpid()}.aac"
@@ -1344,13 +1350,13 @@ def apply_smart_crop_with_ffmpeg(
             except:
                 pass
 
-        return success
+        return (success, has_stacking)
 
     except Exception as e:
         logger.error(f"FFmpeg smart crop failed: {e}")
         import traceback
         traceback.print_exc()
-        return False
+        return (False, False)
 
 
 def apply_smart_crop_with_scenes(
@@ -1828,6 +1834,7 @@ def create_assemblyai_subtitles(
     font_size: int = 24,
     font_color: str = "#FFFFFF",
     caption_template: str = "default",
+    is_stacking: bool = False,
 ) -> List[TextClip]:
     """Create subtitles using AssemblyAI's precise word timing with template support."""
     transcript_data = load_cached_transcript_data(video_path)
@@ -1843,15 +1850,22 @@ def create_assemblyai_subtitles(
     effective_font_family = font_family or template["font_family"]
     effective_font_size = int(font_size) if font_size else int(template["font_size"])
     effective_font_color = font_color or template["font_color"]
+
+    # Adjust position based on stacking mode
+    # Stacking: caption di tengah (0.50), Non-stacking: caption di bawah (0.80)
+    position_y = 0.50 if is_stacking else 0.80
+
     effective_template = {
         **template,
         "font_size": effective_font_size,
         "font_color": effective_font_color,
         "font_family": effective_font_family,
+        "position_y": position_y,  # Override position based on stacking
     }
 
     logger.info(
-        f"Creating subtitles with template '{caption_template}', animation: {animation_type}"
+        f"Creating subtitles with template '{caption_template}', animation: {animation_type}, "
+        f"position: {'middle' if is_stacking else 'bottom'} (stacking={is_stacking})"
     )
 
     # Get words in range
@@ -2290,6 +2304,7 @@ def create_optimized_clip(
             return False
 
         keep_original = output_format == "original"
+        has_stacking = False  # Track if stacking strategy is used
         logger.info(
             f"Creating clip: {start_time:.1f}s - {end_time:.1f}s ({duration:.1f}s) "
             f"subtitles={add_subtitles} template '{caption_template}' format={'original' if keep_original else 'vertical'}"
@@ -2356,7 +2371,7 @@ def create_optimized_clip(
                 logger.info("Using FFmpeg-based smart cropping (fast!)")
 
                 # Process with FFmpeg
-                success = apply_smart_crop_with_ffmpeg(
+                success, has_stacking = apply_smart_crop_with_ffmpeg(
                     video_path,
                     temp_cropped,
                     start_time,
@@ -2375,7 +2390,7 @@ def create_optimized_clip(
                     processed_clip = cropped_clip
 
                     # Note: temp file will be cleaned up after processing
-                    logger.info(f"FFmpeg smart crop successful: {target_width}x{target_height}")
+                    logger.info(f"FFmpeg smart crop successful: {target_width}x{target_height}, stacking={has_stacking}")
                 else:
                     logger.error("FFmpeg smart crop failed, falling back to standard crop")
                     # Reload video and use standard crop
@@ -2417,6 +2432,7 @@ def create_optimized_clip(
                 font_size,
                 font_color,
                 caption_template,
+                is_stacking=has_stacking,
             )
             final_clips.extend(subtitle_clips)
 
