@@ -908,16 +908,15 @@ def get_safe_vertical_position(
 ) -> int:
     """Return subtitle y position clamped inside a top/bottom safe area."""
     min_top_padding = max(40, int(video_height * 0.05))
-    # Significantly increased bottom padding to prevent text cutoff
-    min_bottom_padding = max(200, int(video_height * 0.15))
+    # Balanced bottom padding to prevent text cutoff without pushing text too high
+    min_bottom_padding = max(140, int(video_height * 0.11))
 
-    # Add extra padding for descenders (30% of text height) - g, y, p, q, j
-    descender_padding = int(text_height * 0.3)
+    # Add moderate padding for descenders (20% of text height) - g, y, p, q, j
+    descender_padding = int(text_height * 0.2)
 
     desired_y = int(video_height * position_y - text_height // 2)
     max_y = video_height - min_bottom_padding - text_height - descender_padding
 
-    # Ensure we stay well above the bottom
     return max(min_top_padding, min(desired_y, max_y))
 
 
@@ -2219,7 +2218,7 @@ def create_fade_subtitles(
 
             # Add background if specified
             if has_background and background_color:
-                padding = 20  # Increased from 15 for better spacing
+                padding = 15  # Balanced padding for better spacing
                 # Parse background color (handle alpha)
                 bg_color_hex = (
                     background_color[:7]
@@ -2227,8 +2226,8 @@ def create_fade_subtitles(
                     else background_color
                 )
 
-                # Add extra vertical padding for descenders (increased to 35%)
-                vertical_padding = padding + int(text_height * 0.35)
+                # Add extra vertical padding for descenders (balanced at 20%)
+                vertical_padding = padding + int(text_height * 0.2)
 
                 bg_clip = (
                     ColorClip(
