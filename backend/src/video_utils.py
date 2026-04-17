@@ -1965,13 +1965,19 @@ def create_static_subtitles(
                     method="caption",
                     size=(max_text_width, None),
                     text_align="center",
-                    interline=10,  # Increased from 6 to prevent text cutoff
+                    interline=5,  # Balanced spacing - not too tight, not too loose
                 )
                 .with_duration(segment_duration)
                 .with_start(segment_start)
             )
 
-            text_height = text_clip.size[1] if text_clip.size else 40
+            # Get text height with safe fallback (1.5x font size + padding)
+            if text_clip.size:
+                text_height = text_clip.size[1]
+            else:
+                # Fallback: estimate based on font size with safety margin
+                text_height = int(calculated_font_size * 1.5)
+
             vertical_position = get_safe_vertical_position(
                 video_height, text_height, position_y
             )
@@ -2066,7 +2072,8 @@ def create_karaoke_subtitles(
 
                 # Second pass: create positioned clips
                 current_x = max(horizontal_padding, (video_width - total_width) / 2)
-                text_height = 40
+                # Estimate text height based on font size with safety margin
+                text_height = int(font_size_for_group * 1.5)
 
                 for w_idx, word in enumerate(word_group):
                     is_current = w_idx == word_idx
@@ -2088,9 +2095,12 @@ def create_karaoke_subtitles(
                         .with_start(word_start)
                     )
 
-                    text_height = max(
-                        text_height, word_clip.size[1] if word_clip.size else 40
-                    )
+                    # Update text_height if this word clip is taller
+                    if word_clip.size:
+                        text_height = max(text_height, word_clip.size[1])
+                    else:
+                        # Fallback based on scaled font size
+                        text_height = max(text_height, int(font_size_for_group * 1.5))
                     vertical_position = get_safe_vertical_position(
                         video_height, text_height, position_y
                     )
@@ -2162,13 +2172,19 @@ def create_pop_subtitles(
                     method="caption",
                     size=(max_text_width, None),
                     text_align="center",
-                    interline=10,  # Increased from 6 to prevent text cutoff
+                    interline=5,  # Balanced spacing - not too tight, not too loose
                 )
                 .with_duration(group_duration)
                 .with_start(group_start)
             )
 
-            text_height = text_clip.size[1] if text_clip.size else 40
+            # Get text height with safe fallback (1.5x font size + padding)
+            if text_clip.size:
+                text_height = text_clip.size[1]
+            else:
+                # Fallback: estimate based on font size with safety margin
+                text_height = int(calculated_font_size * 1.5)
+
             vertical_position = get_safe_vertical_position(
                 video_height, text_height, position_y
             )
@@ -2237,8 +2253,15 @@ def create_fade_subtitles(
                 interline=10,  # Increased from 6 to prevent text cutoff
             )
 
-            text_height = text_clip.size[1] if text_clip.size else 40
-            text_width = text_clip.size[0] if text_clip.size else 200
+            # Get text dimensions with safe fallbacks
+            if text_clip.size:
+                text_height = text_clip.size[1]
+                text_width = text_clip.size[0]
+            else:
+                # Fallback: estimate based on font size with safety margin
+                text_height = int(calculated_font_size * 1.5)
+                text_width = 200
+
             vertical_position = get_safe_vertical_position(
                 video_height, text_height, position_y
             )
